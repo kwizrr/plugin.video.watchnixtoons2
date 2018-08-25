@@ -1,7 +1,7 @@
 # WatchNixtoons2
 
-A Kodi video add-on for streaming cartoons and anime from [watchcartoononline.io](https://www.watchcartoononline.io).  
-Install it from [this zip here](https://github.com/doko-desuka/plugin.video.watchnixtoons2/raw/master/plugin.video.watchnixtoons2-0.1.0.zip).  
+A (CURRENTLY BROKEN) Kodi video add-on for streaming cartoons and anime from [watchcartoononline.io](https://www.watchcartoononline.io).  
+No zip to install yet. 
 Help WatchCartoonOnline by making a donation to their PayPal at: wcohelp@yandex.com
 
 Pull-requests are always welcome.
