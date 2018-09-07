@@ -13,7 +13,6 @@ def getWindowProperty(prop):
 def setWindowProperty(prop, data):
     window = xbmcgui.Window(xbmcgui.getCurrentWindowId())
     temp = json.dumps(data)
-    #window.clearProperty(prop) # Not sure if it's needed.
     window.setProperty(prop, temp)
 
 
