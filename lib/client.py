@@ -206,7 +206,7 @@ The catalog is a dictionary of lists of lists, used to store data between add-on
 # Manually splits items from an iterable returned by 'iterableFunc' into an alphabetised catalog.
 # Iterable contains (a['href'], a.string) pairs which refer to a series, episode, ova or movie.
 def catalogFromIterable(iterable):
-    catalog = {key: [ [ ] ] for key in ascii_uppercase + '#'}
+    catalog = {key: [ [ ] ] for key in ascii_uppercase}
     for item in iterable:
         itemKey = item[1][0].upper()
         section = catalog[itemKey] if itemKey in catalog else catalog['#']
