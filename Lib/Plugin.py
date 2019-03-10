@@ -10,7 +10,6 @@ from urlparse import parse_qsl
 from HTMLParser import HTMLParser
 from string import ascii_uppercase
 from urllib import quote_plus, urlencode
-from bs4 import BeautifulSoup, SoupStrainer
 
 import xbmc
 import xbmcgui
@@ -36,15 +35,14 @@ PLUGIN_URL = sys.argv[0]
 
 BASEURL = 'https://www.watchcartoononline.io'
 BASEURL_MOBILE = 'https://m.watchcartoononline.io'
-BASEURL_IMAGES = BASEURL + '/wp-content/catimg/'
 
 PROPERTY_CATALOG_PATH = 'wnt2.catalogPath'
 PROPERTY_CATALOG = 'wnt2.catalog'
 PROPERTY_EPISODE_LIST_URL = 'wnt2.listURL'
 PROPERTY_EPISODE_LIST_DATA = 'wnt2.listData'
 
-HTML_PARSER = HTMLParser()
-IGNORED_WORDS_LOWCASE = set(('english','subbed','dubbed'))
+HTML_UNESCAPE_FUNC = HTMLParser().unescape
+IGNORED_WORDS_LOWCASE = set(('english', 'English', 'subbed', 'Subbed', 'dubbed', 'Dubbed'))
 
 ADDON = xbmcaddon.Addon()
 ADDON_SHOW_CATALOG = ADDON.getSetting('showCatalog') == 'true'
@@ -58,7 +56,7 @@ MEDIA_HEADERS = None # Initialized in 'actionResolve()'.
 # Also used to tell what kind of catalog is loaded in memory.
 # In case they change in the future it'll be easier to modify in here.
 URL_PATHS = {
-    'latest': '/last-50-recent-release',
+    'latest': 'latest', # No path used, 'makeLatestCatalog()' is hardcoded to use the homepage of the mobile website.
     'popular': '/ongoing-series',
     'dubbed': '/dubbed-anime-list',
     'cartoons': '/cartoon-list',
@@ -100,8 +98,8 @@ def actionShowSettings(params):
     # So right after it is a good time to update any settings globals.
     global ADDON_SHOW_CATALOG
     ADDON_SHOW_CATALOG = ADDON.getSetting('showCatalog') == 'true'
-    
-    
+
+
 def actionCatalogMenu(params):
     xbmcplugin.setContent(PLUGIN_ID, 'tvshows')
     catalog = getCatalogProperty(params)
@@ -121,59 +119,63 @@ def actionCatalogMenu(params):
             for sectionName in sorted(catalog.iterkeys()) if len(catalog[sectionName])
         )
         if len(listItems):
-            xbmcplugin.addDirectoryItems(PLUGIN_ID, (sectionAll,) + listItems)
+            if len(listItems) > 1:
+                xbmcplugin.addDirectoryItems(PLUGIN_ID, (sectionAll,) + listItems)
+            else:
+                # Conveniency when a search leads to only 1 result, show it already without the catalog screen.
+                params['section'] = 'ALL'
+                actionCatalogSection(params)
+                return
+        else:
+            xbmcplugin.addDirectoryItem(PLUGIN_ID, '', xbmcgui.ListItem('No Results :('), isFolder=False)
         xbmcplugin.endOfDirectory(PLUGIN_ID)
-        xbmc.executebuiltin('Container.SetViewMode(54)') # InfoWall mode, Estuary skin (the default skin).
+        #xbmc.executebuiltin('Container.SetViewMode(54)') # InfoWall layout, Estuary skin (the default skin).
     else:
         params['section'] = 'ALL'
         actionCatalogSection(params)
-    
+
 
 
 def actionCatalogSection(params):
     catalog = getCatalogProperty(params)
-
     path = params['path']
-    if (
-        path not in (URL_PATHS['ova'], URL_PATHS['movies'], URL_PATHS['latest'])
-        or ('searchType' in params and params['searchType'] == 'series')
-    ):
-        xbmcplugin.setContent(PLUGIN_ID, 'tvshows')
+    isSpecial = path in {URL_PATHS['ova'], URL_PATHS['movies'], URL_PATHS['latest']}
+    searchType = params.get('searchType', None)
+    
+    if searchType == 'series' or (not isSpecial and searchType != 'episodes'):
         action = 'actionEpisodesMenu'
         isFolder = True
     else:
-        xbmcplugin.setContent(PLUGIN_ID, 'episodes')
         # Special case for the OVA, movie and episode-search catalogs, they link to the video player pages already.
         action = 'actionResolve'
         isFolder = False
 
     thumb = params.get('thumb', ADDON_ICON)
     artDict = {'icon': thumb, 'thumb': thumb, 'poster': thumb} if thumb else None
-    plot = params.get('plot', '')
-        
-    def _sectionItem(entry):
-        return (
-            buildURL({'action': action, 'url': entry[1]}),
-            makeListItem(entry[0], artDict, plot, isFolder),
-            isFolder
-        )
 
-    sectionName = params['section']
-        
-    if sectionName == 'ALL':
-        listItems = (
-            _sectionItem(item)
-            for item in chain.from_iterable(catalog[sectionName] for sectionName in sorted(catalog.iterkeys()))
-        )
-    else:
-        listItems = (_sectionItem(item) for item in catalog[sectionName])
-        
-    xbmcplugin.addSortMethod(PLUGIN_ID, xbmcplugin.SORT_METHOD_LABEL_IGNORE_THE)
-    xbmcplugin.addDirectoryItems(PLUGIN_ID, tuple(listItems))
+    def _sectionItemsGen():
+        if ADDON.getSetting('cleanupEpisodes') == 'true' and searchType != 'episodes':
+            listItemFunc = makeListItemClean
+        else:
+            listItemFunc = makeListItem
+            
+        if params['section'] == 'ALL':
+            sectionItems = chain.from_iterable(catalog[sectionName] for sectionName in sorted(catalog))
+        else:
+            sectionItems = catalog[params['section']]
+
+        for entry in sectionItems:
+            yield (
+                buildURL({'action': action, 'url': entry[0]}),
+                listItemFunc(entry[1], artDict, '', isFolder, isSpecial),
+                isFolder
+            )
+
+    xbmcplugin.addDirectoryItems(PLUGIN_ID, tuple(_sectionItemsGen()))
     xbmcplugin.endOfDirectory(PLUGIN_ID)
-    #xbmc.executebuiltin('Container.SetViewMode(54)') # Optionall use a grid layout (Estuary skin).
+    #xbmc.executebuiltin('Container.SetViewMode(54)') # Optional use a grid layout (Estuary skin).
 
-    
+
 def actionEpisodesMenu(params):
     xbmcplugin.setContent(PLUGIN_ID, 'episodes')
 
@@ -183,18 +185,37 @@ def actionEpisodesMenu(params):
     if lastListURL and lastListURL == params['url']:
         listData = getWindowProperty(PROPERTY_EPISODE_LIST_DATA)
     else:
-        r = requestHelper(params['url'].replace('www.', 'm.', 1)) # Show page for the mobile version of the website.
-        soup = BeautifulSoup(r.content, 'html.parser', parse_only=SoupStrainer('div', {'class': 'main'}))
+        url = params['url']
+        # Always get episodes from the mobile version of the show page.
+        r = requestHelper(
+            url.replace('/www.', '/m.', 1) if url.startswith('http') else BASEURL_MOBILE + url
+        )
+        html = r.text
+
         # Try to scrape thumb and plot metadata from the show page.
-        thumb = plot = ''
-        div = soup.find('div', {'id': 'category_description'})
-        if div:
-            thumb = div.img['src'] if div.img else ''
-            plot = div.p.string if div.p else ''
-        # Episode list data: a list of two lists, one has the show thumb & plot data, the other has
-        # the per-episode data.
-        mainUL = soup.find('ul', {'class': 'ui-listview-z'})
-        listData = (thumb, plot, tuple((a.string, a['href']) for a in mainUL.find_all('a')))
+        dataStartIndex = html.find('category_description')
+        if dataStartIndex == -1:
+            raise Exception('Episode description scrape fail: ' + url)
+        else:
+            htmlSlice = html[dataStartIndex : html.find('/p>', dataStartIndex)]
+            thumb = re.search('''<img.*?src.*?"(.*?)"''', htmlSlice)
+            thumb = thumb.group(1) if thumb else ''
+            plot = re.search('''<p>(.*?)<''', htmlSlice, re.DOTALL)
+            plot = plot.group(1) if plot else ''
+
+        dataStartIndex = html.find('ui-listview-z', dataStartIndex)
+        if dataStartIndex == -1:
+            raise Exception('Episode list scrape fail: ' + url)
+
+        # Episode list data: a tuple with the thumb, plot and an inner tuple of per-episode data.
+        listData = (
+            thumb,
+            plot,
+            tuple(
+                match.groups()
+                for match in re.finditer('''<a.*?"(.*?)".*?>(.*?)</''', html[dataStartIndex : html.rfind('button')])
+            )
+        )
         setRawWindowProperty(PROPERTY_EPISODE_LIST_URL, params['url'])
         setWindowProperty(PROPERTY_EPISODE_LIST_DATA, listData)
 
@@ -206,18 +227,20 @@ def actionEpisodesMenu(params):
         artDict = {'icon': thumb, 'thumb': thumb, 'poster': thumb} if thumb else None
         plot = listData[1]
 
+        listItemFunc = makeListItemClean if ADDON.getSetting('cleanupEpisodes') == 'true' else makeListItem
+
         itemParams = {'action': 'actionResolve', 'url': None}
-        listIter = iter(listData[2]) if ADDON.getSetting('reverseEpisodes')=='true' else reversed(listData[2])
-        for title, URL in listIter:
-            item = makeListItem(title, artDict, plot, isFolder=False)
+        listIter = iter(listData[2]) if ADDON.getSetting('reverseEpisodes') == 'true' else reversed(listData[2])
+        for URL, title in listIter:
+            item = listItemFunc(title, artDict, plot, isFolder=False, isSpecial=False)
             itemParams['url'] = URL
             itemURL = buildURL(itemParams)
             playlist.add(itemURL, item)
             yield (itemURL, item, False)
 
     xbmcplugin.addDirectoryItems(PLUGIN_ID, tuple(_episodeItemsGen()))
-    xbmcplugin.endOfDirectory(PLUGIN_ID)    
-    
+    xbmcplugin.endOfDirectory(PLUGIN_ID)
+
 
 # A sub menu, lists search options.
 def actionSearchMenu(params):
@@ -285,23 +308,26 @@ def actionSearchMenu(params):
 # A sub menu, lists the genre categories in the genre search.
 def actionGenresMenu(params):
     r = requestHelper(BASEURL_MOBILE + URL_PATHS['genre'])
-    soup = BeautifulSoup(r.text, 'html.parser')
-    mainDIV = soup.find('div', {'class': 'main'})
+    html = r.text
+
+    dataStartIndex = html.find('ui-listview-z')
+    if dataStartIndex == -1:
+        raise Exception('Genres list scrape fail')
 
     xbmcplugin.addDirectoryItems(
         PLUGIN_ID,
         tuple(
             (
-                buildURL({'action': 'actionCatalogMenu', 'path': URL_PATHS['genre'] + a['href'][a['href'].rfind('/'):]}),
-                xbmcgui.ListItem(a.string),
+                buildURL({'action': 'actionCatalogMenu', 'path': match.group(1)}),
+                xbmcgui.ListItem(match.group(2)),
                 True
             )
-            for a in mainDIV.ul.find_all('a')
+            for match in re.finditer('''<a.*?"(.*?)".*?>(.*?)</''', html[dataStartIndex : html.rfind('button')])
         )
     )
     xbmcplugin.endOfDirectory(PLUGIN_ID)
 
-    
+
 def actionTraktMenu(params):
     instance = SimpleTrakt.getInstance()
     if instance.ensureAuthorized(ADDON):
@@ -371,46 +397,94 @@ def actionClearTrakt(params):
 def getTitleInfo(unescapedTitle):
     # We need to interpret the full title of each episode's link's string
     # for information like episode number, season and show title.
-    season = 0
-    episode = 0
-    showTitle = ''
+    season = None
+    episode = None
+    showTitle = unescapedTitle
+    episodeTitle = ''
 
-    titleWords = unescapedTitle.split()
-    for index, word in enumerate(titleWords):
-        if word == 'Season':
-            try:
-                season = int(titleWords[index+1])
-            except ValueError:
-                pass
-        elif word == 'Episode':
-            try:
-                episode = int(titleWords[index+1].split('-')[0]) # Sometimes it's more than one, like "42-43".
-                if not season:
-                    season = 1 # Season 1 is ocasionally omitted in the title.
-            except:
-                episode = 0
-            break # The word 'Episode' is always put after the season and show title in the link strings.
+    seasonIndex = unescapedTitle.find('Season ') # 7 characters long.
+    if seasonIndex != -1:
+        season = unescapedTitle[seasonIndex+7 : unescapedTitle.find(' ', seasonIndex+7)]
+        showTitle = unescapedTitle[:seasonIndex].strip()
+
+    episodeIndex = unescapedTitle.find(' Episode ') # 9 characters long.
+    if episodeIndex != -1:
+        spaceIndex = unescapedTitle.find(' ', episodeIndex+9)
+        if spaceIndex > episodeIndex:
+            episode = unescapedTitle[episodeIndex+9 : spaceIndex]
+            englishIndex = unescapedTitle.rfind(' English', spaceIndex)
+            if englishIndex != -1:
+                episodeTitle = unescapedTitle[spaceIndex+1 : englishIndex]
+            else:
+                episodeTitle = unescapedTitle[spaceIndex+1:]
+            # Safeguard for when season 1 is ocasionally omitted in the title.
+            if not season:
+                season = '1'
+
+    if episode:
+        return (showTitle[:episodeIndex], season, episode, episodeTitle)
+    else:
+        englishIndex = unescapedTitle.rfind(' English')
+        if englishIndex != -1:
+            return (unescapedTitle[:englishIndex], None, None, '')
         else:
-            if not season and not episode and word.lower() not in IGNORED_WORDS_LOWCASE:
-                showTitle += word + ' '
-    return (showTitle.strip(), season, episode)
+            return (unescapedTitle, None, None, '')
 
 
-def makeListItem(title, artDict, plot, isFolder):
-    unescapedTitle = HTML_PARSER.unescape(title.strip())
-    title, season, episode  = getTitleInfo(unescapedTitle)
-
+def makeListItem(title, artDict, plot, isFolder, isSpecial):
+    unescapedTitle = title.replace('&amp;', '&') #.replace( . . .) add more replaces as needed.
     item = xbmcgui.ListItem(unescapedTitle)
+
+    if not (isFolder or isSpecial):
+        title, season, episode, episodeTitle = getTitleInfo(unescapedTitle)
+        # Playable content.
+        item.setProperty('IsPlayable', 'true') # Allows the checkmark to be placed on watched episodes.
+        itemInfo = {
+            'mediatype': 'episode' if episode else 'tvshow', 'tvshowtitle': title, 'title': episodeTitle, 'plot': plot
+        }
+        if episode and episode.isdigit():
+            itemInfo['season'] = int(season)
+            itemInfo['episode'] = int(episode.split('-')[0]) # For multipart episodes, like "42-43".
+        item.setInfo('video', itemInfo)
+    elif isSpecial:
+        item.setProperty('IsPlayable', 'true')
+
     if artDict:
         item.setArt(artDict)
+
+    return item
+
+
+def makeListItemClean(title, artDict, plot, isFolder, isSpecial):
+    # Variant of the 'makeListItem()' function that tries to format the item label using the season and episode.
+    unescapedTitle = title.replace('&amp;', '&')
     
-    if not isFolder:
-        item.setProperty('IsPlayable', 'true') # Allows the checkmark to be placed on watched episodes.
-        itemInfo = {'mediatype': 'episode' if episode else 'tvshow', 'title': title, 'plot': plot}
-        if episode:
-            itemInfo.update({'season': season, 'episode': episode})
+    if isFolder or isSpecial:
+        item = xbmcgui.ListItem(unescapedTitle)
+        if isSpecial:
+            item.setProperty('IsPlayable', 'true')
+    else:
+        title, season, episode, episodeTitle = getTitleInfo(unescapedTitle)
+        if episode and episode.isdigit():
+            # The clean episode label will have this format: SxEE Episode Name, with S and EE standing for digits.
+            item = xbmcgui.ListItem('[B]' + season.zfill(2) + 'x' + episode.zfill(2) + '[/B] ' + (episodeTitle or title))
+            itemInfo = {
+                'mediatype': 'episode',
+                'tvshowtitle': title,
+                'title': title,
+                'plot': plot,
+                'season': int(season),
+                'episode': int(episode.split('-')[0])
+            }
+        else:
+            item = xbmcgui.ListItem(title)
+            itemInfo = {'mediatype': 'tvshow', 'tvshowtitle': title, 'title': title, 'plot': plot}
         item.setInfo('video', itemInfo)
-        
+        item.setProperty('IsPlayable', 'true')
+
+    if artDict:
+        item.setArt(artDict)
+
     return item
 
 
@@ -426,29 +500,108 @@ def makeListItem(title, artDict, plot, isFolder):
 }
 '''
 
-# Manually splits items from an iterable returned by 'iterableFunc' into an alphabetised catalog.
-# Iterable contains (a.string, a['href']) pairs which refer to a series, episode, ova or movie.
+# Manually sorts items from an iterable into an alphabetised catalog.
+# Iterable contains (a.string, a['href']) pairs that might refer to a series, episode, ova or movie.
 def catalogFromIterable(iterable):
     catalog = {key: [ ] for key in ascii_uppercase}
     miscSection = catalog['#'] = [ ]
     for item in iterable:
-        catalog.get(item[0][0].upper(), miscSection).append(item)
+        key = item[1][0].upper()
+        if key in catalog:
+            catalog[key].append(item)
+        else:
+            miscSection.append(item)
     return catalog
 
 
 def makeLatestCatalog(params):
     # Returns a list of links from the "Latest 50 Releases" area but for mobile.
     r = requestHelper(BASEURL_MOBILE) # Path unused, data is already on the homepage.
-    mainOL = BeautifulSoup(r.content, 'html.parser', parse_only=SoupStrainer('ol', {'class': 'vList'}))
-    return catalogFromIterable((li.a.text, li.a['href']) for li in mainOL.find_all('li'))
+    html = r.text
+
+    dataStartIndex = html.find('vList')
+    if dataStartIndex == -1:
+        raise Exception('Latest catalog scrape fail')
+
+    return catalogFromIterable(
+        match.groups()
+        for match in re.finditer(
+            '''<a.*?"(.*?)".*?div.*?div>(.*?)</div''', html[dataStartIndex : html.find('/ol')]
+        )
+    )
 
 
 def makePopularCatalog(params):
-    # The movies path is missing some items in BASEURL_MOBILE, so we use the BASEURL (full website) in here.
-    r = requestHelper(BASEURL + params['path'])
-    soup = BeautifulSoup(r.content, 'html.parser', parse_only=SoupStrainer('div', {'class': 'ddmcc'}))
-    mainUL = soup.ul
-    return catalogFromIterable((a.text, a['href']) for subUL in mainUL.find_all('ul') for a in subUL.find_all('a'))
+    # The "Popular & Ongoing" page of the mobile version is more complete.
+    r = requestHelper(BASEURL_MOBILE + params['path'])
+    html = r.text
+
+    dataStartIndex = html.find('ui-listview-z')
+    if dataStartIndex == -1:
+        raise Exception('Popular catalog scrape fail: ' + params['path'])
+
+    return catalogFromIterable(
+        match.groups()
+        for match in re.finditer(
+            '''<a.*?href="(.*?)".*?>(.*?)</''', html[dataStartIndex : html.rfind('button')]
+        )
+    )
+
+
+def makeSeriesSearchCatalog(params):
+    r = requestHelper(BASEURL + '/search', {'catara': params['query'], 'konuara': 'series'})
+    html = r.text
+
+    dataStartIndex = html.find('submit')
+    if dataStartIndex == -1:
+        raise Exception('Series search scrape fail: ' + params['query'])
+
+    return catalogFromIterable(
+        match.groups()
+        for match in re.finditer(
+            '''aramadabaslik.*?<a.*?"(.*?)".*?>(.*?)</''',
+            html[dataStartIndex : html.find('cizgiyazisi')],
+            re.DOTALL
+        )
+    )
+
+
+def makeMoviesSearchCatalog(params):
+    # Try a movie category search (same code as in 'makeGenericCatalog()').
+    r = requestHelper(BASEURL + URL_PATHS['movies'])
+    html = r.text
+
+    dataStartIndex = html.find(r'ddmcc">')
+    if dataStartIndex == -1:
+        raise Exception('Movies search scrape fail: ' + params['query'])
+
+    lowerQuery = params['query'].lower()
+
+    return catalogFromIterable(
+        match.groups()
+        for match in re.finditer(
+            '''<a.*?"(.*?)".*?>(.*?)</''', html[dataStartIndex : html.find(r'/ul></ul')]
+        )
+        if lowerQuery in match.group(2).lower()
+    )
+
+
+def makeEpisodesSearchCatalog(params):
+    r = requestHelper(BASEURL + '/search', {'catara': params['query'], 'konuara': 'episodes'})
+    html = r.text
+
+    dataStartIndex = html.find('submit')
+    if dataStartIndex == -1:
+        raise Exception('Episode search scrape fail: ' + params['query'])
+
+    return catalogFromIterable(
+        match.groups()
+        for match in re.finditer(
+            '''<a.*?"(.*?)".*?>(.*?)</''',
+            html[dataStartIndex : html.find('cizgiyazisi')],
+            re.DOTALL
+        )
+    )
 
 
 def makeSearchCatalog(params):
@@ -461,30 +614,22 @@ def makeSearchCatalog(params):
         return makeEpisodesSearchCatalog(params)
 
 
-def makeSeriesSearchCatalog(params):
-    r = requestHelper(BASEURL + '/search', {'catara': params['query'], 'konuara': 'series'})
-    # Shorthand '_class' parameter doesn't work on SoupStrainer...
-    results = BeautifulSoup(r.content, 'html.parser', parse_only=SoupStrainer('div', {'class': 'cerceve'}))
-    return catalogFromIterable((div.a.string, div.a['href'].replace(BASEURL, '')) for div in results)
-
-        
-def makeMoviesSearchCatalog(params):
-    # Try a movie category search (same code as in 'makePopularCatalog()').
-    r = requestHelper(BASEURL + URL_PATHS['movies'])
-    soup = BeautifulSoup(r.content, 'html.parser', parse_only=SoupStrainer('div', {'class': 'ddmcc'}))
-    lowerQuery = params['query'].lower()
-    return catalogFromIterable((a.text, a['href']) for a in soup.ul.find_all('a') if lowerQuery in a.text.lower())
-
-
-def makeEpisodesSearchCatalog(params):
-    r = requestHelper(BASEURL + '/search', {'catara': params['query'], 'konuara': 'episodes'})
-    soup = BeautifulSoup(r.content, 'html.parser', parse_only=SoupStrainer('div', {'id': 'catlist-listview2'}))
-    mainUL = soup.ul
-    return catalogFromIterable(((a.string, a['href'].replace(BASEURL, '')) for a in mainUL.find_all('a')))
-
-
 def makeGenericCatalog(params):
-    return makePopularCatalog(params) # Same HTML layout, can use the same scraping.
+    # The movies path is missing some items when scraped from BASEURL_MOBILE, so we use the BASEURL
+    # (full website) in here.
+    r = requestHelper(BASEURL + params['path'])
+    html = r.text
+
+    dataStartIndex = html.find(r'ddmcc">')
+    if dataStartIndex == -1:
+        raise Exception('Generic catalog scrape fail: ' + params['path'])
+
+    return catalogFromIterable(
+        match.groups()
+        for match in re.finditer(
+            '''<li><a.*?"(.*?)".*?>(.*?)</''', html[dataStartIndex : html.find(r'/ul></ul')]
+        )
+    )
 
 
 # Retrieves the catalog from a persistent XBMC window property between different add-on
@@ -512,10 +657,10 @@ def getCatalogProperty(params):
 
 
 def actionResolve(params):
-    # Needs to be the BASEURL to get multiple video qualities.
+    # Needs to be the BASEURL domain to get multiple video qualities.
     url = params['url']
     r = requestHelper(url if url.startswith('http') else BASEURL + url)
-    
+
     html = r.text
     chars = re.search(r' = \[(".*?")\];', html).group(1)
     spread = int(re.search(r' - (\d+)\)\; }', html).group(1))
@@ -531,15 +676,15 @@ def actionResolve(params):
         sourceUrl = sourceUrl.replace('&#038;', '&')
     else:
         sourceUrl = sourceUrl.replace('embed', 'embed-adh')
-        
+
     r = requestHelper(BASEURL + sourceUrl)
     # Capture the sources block in the page.
     temp = re.search(r'sources:\s*(\[\s*?{.*?}\s*?\])(?:\s*}])?', r.text, re.DOTALL).group(1)
     # Add double quotes around every property name (file: -> "file":).
     temp = re.sub(r'(\s)(\w.*?)(:\s)', r'\1"\2"\3', temp)
     # Replace single quotes if applicable, so it can be loaded as JSON data.
-    sources = json.loads(temp.replace("'",'"')) 
-    
+    sources = json.loads(temp.replace("'",'"'))
+
     # The property names in the sources block vary between 'file' and 'src' and between
     # 'label' and 'format' depending on if the show is new or not. The JSON data is a
     # list of dictionaries, one dict for each source.
@@ -548,7 +693,7 @@ def actionResolve(params):
         s['_height'] = ''.join(char for char in (s['label'] if 'label' in s else s.get('format','')) if char.isdigit())
         s['_label'] = s['label'] if 'label' in s else s.get('format', 'video')
     sources = sorted(sources, key = lambda s: s['_height'])
-    
+
     mediaURL = ''
     if len(sources) == 1:
         mediaURL = sources[0]['_url']
@@ -569,8 +714,8 @@ def actionResolve(params):
     if mediaURL:
         # Need to use the exact same ListItem name/infolabels or else it gets replaced in the Kodi list.
         item = xbmcgui.ListItem(xbmc.getInfoLabel('ListItem.Label'))
-       
-        # Set some desktop browser headers for Kodi to use.
+
+        # Set some media request headers for Kodi to use, it's just good etiquette.
         global MEDIA_HEADERS
         if not MEDIA_HEADERS:
             MEDIA_HEADERS = '|' + '&'.join(key + '=' + quote_plus(value) for key, value in (
@@ -578,11 +723,10 @@ def actionResolve(params):
                     ('Accept', 'video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5'),
                     ('Accept-Language', 'en-US,en;q=0.5'),
                     ('Connection', 'keep-alive'),
-                    ('Referer', BASEURL + '/'),
-                    ('DNT', '1')            
+                    ('Referer', BASEURL + '/')
                 )
             )
-        
+
         item.setPath(mediaURL + MEDIA_HEADERS)
         item.setProperty('IsPlayable', 'true')
         episodeString = xbmc.getInfoLabel('ListItem.Episode')
@@ -606,7 +750,7 @@ def actionResolve(params):
                 }
             )
         #xbmc.Player().play(listitem=item) # Alternative play method, lets you extend the Player class with your own.
-        xbmcplugin.setResolvedUrl(PLUGIN_ID, True, item)    
+        xbmcplugin.setResolvedUrl(PLUGIN_ID, True, item)
     else:
         # Failed. No source found, or the user didn't select one from the dialog.
         xbmcplugin.setResolvedUrl(PLUGIN_ID, False, xbmcgui.ListItem())
@@ -621,8 +765,8 @@ def buildURL(query):
     return (PLUGIN_URL + '?' + urlencode({k: v.encode('utf-8') if isinstance(v, unicode)
                                          else unicode(v, errors='ignore').encode('utf-8')
                                          for k, v in query.iteritems()}))
-                                         
-                                         
+
+
 def xbmcDebug(name, val):
     xbmc.log('WATCHNIXTOONS2 > ' + name + ' ' + (repr(val) if not isinstance(val, str) else val), xbmc.LOGWARNING)
 
@@ -639,40 +783,40 @@ def requestHelper(url, data = None):
         session.headers.update(myHeaders)
         requestHelper.session = session
     else:
-        session = requestHelper.session    
-        
+        session = requestHelper.session
+
     if data:
         return requestHelper.session.post(url, data=data, headers={'Referer':BASEURL+'/'}, verify=False, timeout = 8)
     else:
         return requestHelper.session.get(url, verify=False, timeout=8)
 
 
-def getRandomUserAgent():
-    # Random user-agent logic. Thanks to http://edmundmartin.com/random-user-agent-requests-python/
-    from random import choice
-    desktop_agents = (
-        'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.99 Safari/537.36',
-        'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.99 Safari/537.36',
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.99 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_1) AppleWebKit/602.2.14 (KHTML, like Gecko) Version/10.0.1 Safari/602.2.14',
-        'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.98 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.98 Safari/537.36',
-        'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36',
-        'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.99 Safari/537.36',
-        'Mozilla/5.0 (Windows NT 10.0; WOW64; rv:50.0) Gecko/20100101 Firefox/50.0'
-    )
-    return choice(desktop_agents)
-    
+#def getRandomUserAgent():
+#    # Random user-agent logic. Thanks to http://edmundmartin.com/random-user-agent-requests-python/
+#    from random import choice
+#    desktop_agents = (
+#        'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.99 Safari/537.36',
+#        'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.99 Safari/537.36',
+#        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.99 Safari/537.36',
+#        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_1) AppleWebKit/602.2.14 (KHTML, like Gecko) Version/10.0.1 Safari/602.2.14',
+#        'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36',
+#        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.98 Safari/537.36',
+#        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.98 Safari/537.36',
+#        'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36',
+#        'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.99 Safari/537.36',
+#        'Mozilla/5.0 (Windows NT 10.0; WOW64; rv:50.0) Gecko/20100101 Firefox/50.0'
+#    )
+#    return choice(desktop_agents)
 
-# Defined after all the functions exist.       
+
+# Defined after all the functions exist.
 CATALOG_FUNCS = {
     URL_PATHS['latest']: makeLatestCatalog,
     URL_PATHS['popular']: makePopularCatalog,
     URL_PATHS['search']: makeSearchCatalog
 }
 
-        
+
 def main():
     '''
     Main add-on routing function, calls a certain action (function).
