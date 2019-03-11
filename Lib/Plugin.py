@@ -41,8 +41,7 @@ PROPERTY_CATALOG = 'wnt2.catalog'
 PROPERTY_EPISODE_LIST_URL = 'wnt2.listURL'
 PROPERTY_EPISODE_LIST_DATA = 'wnt2.listData'
 
-HTML_UNESCAPE_FUNC = HTMLParser().unescape
-IGNORED_WORDS_LOWCASE = set(('english', 'English', 'subbed', 'Subbed', 'dubbed', 'Dubbed'))
+#HTML_UNESCAPE_FUNC = HTMLParser().unescape # Not really needed, titles don't use much HTML escaping.
 
 ADDON = xbmcaddon.Addon()
 ADDON_SHOW_CATALOG = ADDON.getSetting('showCatalog') == 'true'
@@ -318,7 +317,7 @@ def actionGenresMenu(params):
         PLUGIN_ID,
         tuple(
             (
-                buildURL({'action': 'actionCatalogMenu', 'path': match.group(1)}),
+                buildURL({'action': 'actionCatalogMenu', 'path': match.group(1), 'searchType': 'genres'}),
                 xbmcgui.ListItem(match.group(2)),
                 True
             )
@@ -399,6 +398,7 @@ def getTitleInfo(unescapedTitle):
     # for information like episode number, season and show title.
     season = None
     episode = None
+    multiPart = None
     showTitle = unescapedTitle
     episodeTitle = ''
 
@@ -411,7 +411,10 @@ def getTitleInfo(unescapedTitle):
     if episodeIndex != -1:
         spaceIndex = unescapedTitle.find(' ', episodeIndex+9)
         if spaceIndex > episodeIndex:
-            episode = unescapedTitle[episodeIndex+9 : spaceIndex]
+            episodeSplit = unescapedTitle[episodeIndex+9 : spaceIndex].split('-') # For multipart episodes, like "42-43".
+            episode = episodeSplit[0]
+            multiPart = episodeSplit[1] if len(episodeSplit) > 1 else None
+                
             englishIndex = unescapedTitle.rfind(' English', spaceIndex)
             if englishIndex != -1:
                 episodeTitle = unescapedTitle[spaceIndex+1 : englishIndex]
@@ -422,29 +425,29 @@ def getTitleInfo(unescapedTitle):
                 season = '1'
 
     if episode:
-        return (showTitle[:episodeIndex], season, episode, episodeTitle)
+        return (showTitle[:episodeIndex], season, episode, multiPart, episodeTitle)
     else:
         englishIndex = unescapedTitle.rfind(' English')
         if englishIndex != -1:
-            return (unescapedTitle[:englishIndex], None, None, '')
+            return (unescapedTitle[:englishIndex], None, None, None, '')
         else:
-            return (unescapedTitle, None, None, '')
+            return (unescapedTitle, None, None, None, '')
 
 
 def makeListItem(title, artDict, plot, isFolder, isSpecial):
-    unescapedTitle = title.replace('&amp;', '&') #.replace( . . .) add more replaces as needed.
+    unescapedTitle = title.replace('&amp;', '&') #.replace( . . . ), add more HTML entity replacements as needed.
     item = xbmcgui.ListItem(unescapedTitle)
 
     if not (isFolder or isSpecial):
-        title, season, episode, episodeTitle = getTitleInfo(unescapedTitle)
+        title, season, episode, multiPart, episodeTitle = getTitleInfo(unescapedTitle)
         # Playable content.
         item.setProperty('IsPlayable', 'true') # Allows the checkmark to be placed on watched episodes.
         itemInfo = {
             'mediatype': 'episode' if episode else 'tvshow', 'tvshowtitle': title, 'title': episodeTitle, 'plot': plot
         }
         if episode and episode.isdigit():
-            itemInfo['season'] = int(season)
-            itemInfo['episode'] = int(episode.split('-')[0]) # For multipart episodes, like "42-43".
+            itemInfo['season'] = int(season) if season.isdigit() else -1
+            itemInfo['episode'] = int(episode)
         item.setInfo('video', itemInfo)
     elif isSpecial:
         item.setProperty('IsPlayable', 'true')
@@ -464,17 +467,20 @@ def makeListItemClean(title, artDict, plot, isFolder, isSpecial):
         if isSpecial:
             item.setProperty('IsPlayable', 'true')
     else:
-        title, season, episode, episodeTitle = getTitleInfo(unescapedTitle)
+        title, season, episode, multiPart, episodeTitle = getTitleInfo(unescapedTitle)
         if episode and episode.isdigit():
             # The clean episode label will have this format: SxEE Episode Name, with S and EE standing for digits.
-            item = xbmcgui.ListItem('[B]' + season.zfill(2) + 'x' + episode.zfill(2) + '[/B] ' + (episodeTitle or title))
+            item = xbmcgui.ListItem(
+                '[B]' + season + 'x' + episode.zfill(2) + ('-' + multiPart if multiPart else '') + '[/B] '
+                + (episodeTitle or title)
+            )
             itemInfo = {
                 'mediatype': 'episode',
                 'tvshowtitle': title,
                 'title': title,
                 'plot': plot,
-                'season': int(season),
-                'episode': int(episode.split('-')[0])
+                'season': int(season) if season.isdigit() else -1,
+                'episode': int(episode)
             }
         else:
             item = xbmcgui.ListItem(title)
@@ -619,15 +625,17 @@ def makeGenericCatalog(params):
     # (full website) in here.
     r = requestHelper(BASEURL + params['path'])
     html = r.text
-
+        
     dataStartIndex = html.find(r'ddmcc">')
     if dataStartIndex == -1:
         raise Exception('Generic catalog scrape fail: ' + params['path'])
 
+    # Account for genre searches having a slightly different end pattern.
+    dataEndPattern = r'/ul></div></div' if 'search-by-genre' in params['path'] else r'/ul></ul'
     return catalogFromIterable(
         match.groups()
         for match in re.finditer(
-            '''<li><a.*?"(.*?)".*?>(.*?)</''', html[dataStartIndex : html.find(r'/ul></ul')]
+            '''<li><a.*?"(.*?)".*?>(.*?)</''', html[dataStartIndex : html.find(dataEndPattern)]
         )
     )
 
@@ -778,7 +786,9 @@ def requestHelper(url, data = None):
         myUA = 'Mozilla/5.0 (compatible; WatchNixtoons2/0.1.0; +https://github.com/doko-desuka/plugin.video.watchnixtoons2)'
         myHeaders = {
             'User-Agent': myUA,
-            'Accept': 'text/html,application/xhtml+xml,application/xml,application/json;q=0.9,image/webp,*/*;q=0.8'
+            'Accept': 'text/html,application/xhtml+xml,application/xml,application/json;q=0.9,image/webp,*/*;q=0.8',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
         }
         session.headers.update(myHeaders)
         requestHelper.session = session
