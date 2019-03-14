@@ -6,6 +6,7 @@ import requests
 
 from itertools import chain
 from base64 import b64decode
+from time import time, sleep
 from urlparse import parse_qsl
 from HTMLParser import HTMLParser
 from string import ascii_uppercase
@@ -40,6 +41,7 @@ PROPERTY_CATALOG_PATH = 'wnt2.catalogPath'
 PROPERTY_CATALOG = 'wnt2.catalog'
 PROPERTY_EPISODE_LIST_URL = 'wnt2.listURL'
 PROPERTY_EPISODE_LIST_DATA = 'wnt2.listData'
+PROPERTY_LATEST_MOVIES = 'wnt2.latestMovies'
 
 #HTML_UNESCAPE_FUNC = HTMLParser().unescape # Not really needed, titles don't use much HTML escaping.
 
@@ -61,6 +63,7 @@ URL_PATHS = {
     'cartoons': '/cartoon-list',
     'subbed': '/subbed-anime-list',
     'movies': '/movie-list',
+    'latestmovies': '/anime/movies',
     'ova': '/ova-list',
     'search': '/search',
     'genre': '/search-by-genre'
@@ -78,6 +81,9 @@ def actionMenu(params):
         PLUGIN_ID,
         (
             _menuItem('Latest Releases', {'action': 'actionCatalogMenu', 'path': URL_PATHS['latest']}, 'mediumaquamarine'),
+            _menuItem( # Make the Latest Movies menu go straight to the item list.
+                'Latest Movies', {'action': 'actionLatestMoviesMenu', 'path': URL_PATHS['latestmovies']}, 'mediumaquamarine'
+            ),
             _menuItem('Popular & Ongoing Series', {'action': 'actionCatalogMenu', 'path': URL_PATHS['popular']}, 'mediumaquamarine'),
             _menuItem('Dubbed Anime', {'action': 'actionCatalogMenu', 'path': URL_PATHS['dubbed']}, 'lightgreen'),
             _menuItem('Cartoons', {'action': 'actionCatalogMenu', 'path': URL_PATHS['cartoons']}, 'lightgreen'),
@@ -164,9 +170,10 @@ def actionCatalogSection(params):
             sectionItems = catalog[params['section']]
 
         for entry in sectionItems:
+            entryURL = entry[0]
             yield (
-                buildURL({'action': action, 'url': entry[0]}),
-                listItemFunc(entry[1], artDict, '', isFolder, isSpecial),
+                buildURL({'action': action, 'url': entryURL}),
+                listItemFunc(entry[1], entryURL, artDict, '', isFolder, isSpecial),
                 isFolder
             )
 
@@ -222,6 +229,7 @@ def actionEpisodesMenu(params):
         playlist = xbmc.PlayList(xbmc.PLAYLIST_VIDEO)
         playlist.clear()
 
+        showURL = params['url']
         thumb = listData[0]
         artDict = {'icon': thumb, 'thumb': thumb, 'poster': thumb} if thumb else None
         plot = listData[1]
@@ -231,7 +239,7 @@ def actionEpisodesMenu(params):
         itemParams = {'action': 'actionResolve', 'url': None}
         listIter = iter(listData[2]) if ADDON.getSetting('reverseEpisodes') == 'true' else reversed(listData[2])
         for URL, title in listIter:
-            item = listItemFunc(title, artDict, plot, isFolder=False, isSpecial=False)
+            item = listItemFunc(title, showURL, artDict, plot, isFolder=False, isSpecial=False)
             itemParams['url'] = URL
             itemURL = buildURL(itemParams)
             playlist.add(itemURL, item)
@@ -241,6 +249,35 @@ def actionEpisodesMenu(params):
     xbmcplugin.endOfDirectory(PLUGIN_ID)
 
 
+def actionLatestMoviesMenu(params):
+    # Returns a list of links from a hidden "/anime/movies" area.
+    # Since this page is very large (130 KB), we memory cache it after it's been requested.
+    html = getRawWindowProperty(PROPERTY_LATEST_MOVIES)
+    if not html:
+        r = requestHelper(BASEURL + params['path']) # Path unused, data is already on the homepage.
+        html = r.text
+        setRawWindowProperty(PROPERTY_LATEST_MOVIES, html)
+
+    dataStartIndex = html.find('catlist-listview')
+    if dataStartIndex == -1:
+        raise Exception('Latest movies scrape fail')
+
+    def _movieItemsGen():
+        artDict = {'icon': ADDON_ICON, 'thumb': ADDON_ICON, 'poster': ADDON_ICON}            
+        reIter = re.finditer(
+            '''<a.*?href="(.*?)".*?>(.*?)</''', html[dataStartIndex : html.find('CAT List FINISH')], re.DOTALL
+        )
+        for x in range(200): # There's like 6000 items going back to 2010, so we limit to only the latest 200.
+            entry = next(reIter).groups()
+            yield (
+                buildURL({'action': 'actionResolve', 'url': entry[0]}),
+                makeListItem(entry[1], entry[0], artDict, '', isFolder=False, isSpecial=True),
+                False
+            )
+    xbmcplugin.addDirectoryItems(PLUGIN_ID, tuple(_movieItemsGen()))
+    xbmcplugin.endOfDirectory(PLUGIN_ID)
+    
+    
 # A sub menu, lists search options.
 def actionSearchMenu(params):
     def _modalKeyboard(heading):
@@ -391,6 +428,68 @@ def actionClearTrakt(params):
             'Watchnixtoons2', 'Trakt tokens already cleared', xbmcgui.NOTIFICATION_INFO, 3500, False
         )
     ADDON = xbmcaddon.Addon()
+    
+    
+def actionShowInfo(params):
+    # Get the desktop page for the item, whatever it is.
+    url = params['url']
+    r = requestHelper(
+        url.replace('m.', 'www.', 1) if url.startswith('http') else BASEURL + url
+    )
+    html = r.text
+    
+    title = xbmc.getInfoLabel('ListItem.Label')
+    tempItem = xbmcgui.ListItem(title)
+    
+    stringStartIndex = html.find('og:image" content="') + 19
+    if stringStartIndex == 18:
+        xbmcgui.Dialog().notification('Watchnixtoons2', 'Could not find metadata', xbmcgui.NOTIFICATION_INFO, 2000, False)
+        return
+    stringGrab = html[stringStartIndex : html.find('"', stringStartIndex)]
+
+    if stringGrab:        
+        tempItem.setArt({'thumb': stringGrab, 'poster': stringGrab, 'fanart': stringGrab}) # Some pages don't have thumbnails.
+    
+    # We don't know if it's a show page (which has a list of episodes) or movie/OVA/episode page (which
+    # has the video player element). Find out what it is.    
+    plot = ''
+    if 'cat-img-desc' in html :
+        # It's a show page.
+        stringStartIndex = html.find('iltext">') + 8
+        if stringStartIndex != 7:
+            if html.find('</div', stringStartIndex) > 0: # Sometimes the description is empty.
+                match = re.search('p>(.*?)</p', html[stringStartIndex:], re.DOTALL)
+                if match:
+                    plot = unescapeHTMLText(
+                        match.group(1).replace('<p>', '').replace('</p>', '\n').replace('<br />', '\n').strip()
+                    )
+    else:
+        # Assume it's a video player page.
+        stringStartIndex = html.find('iltext"')
+        if stringStartIndex != 7:
+            match = re.search('/b>(.*?)<span', html[stringStartIndex:], re.DOTALL)
+            if match:
+                plot = unescapeHTMLText(
+                    match.group(1).replace('<p>', '').replace('</p>', '\n').replace('<br />', '\n').strip()
+                )
+    
+    tempItem.setInfo(
+        'video', {'mediatype': 'video', 'tvshowtitle': title, 'title': title, 'plot': plot, 'description': plot}
+    )
+    xbmcgui.Dialog().info(tempItem)
+    xbmcplugin.endOfDirectory(int(sys.argv[1]))
+    
+    
+def unescapeHTMLText(text):
+    text = text.encode('utf-8') if isinstance(text, unicode) else unicode(text, errors='ignore').encode('utf-8')
+    # Unescape HTML entities.
+    if r'&#' in text:
+        # Strings found by regex-searching on all lists in the source website. It's very likely to only be these.
+        return text.replace(r'&#8216;', '‘').replace(r'&#8221;', '”').replace(r'&#8211;', '–').replace(r'&#038;', '&')\
+        .replace(r'&#8217;', '’').replace(r'&#8220;', '“').replace(r'&#8230;', '…').replace(r'&#160;', ' ')\
+        .replace(r'&amp;', '&')
+    else:
+        return text.replace(r'&amp;', '&')
 
 
 def getTitleInfo(unescapedTitle):
@@ -434,8 +533,8 @@ def getTitleInfo(unescapedTitle):
             return (unescapedTitle, None, None, None, '')
 
 
-def makeListItem(title, artDict, plot, isFolder, isSpecial):
-    unescapedTitle = title.replace('&amp;', '&') #.replace( . . . ), add more HTML entity replacements as needed.
+def makeListItem(title, url, artDict, plot, isFolder, isSpecial):
+    unescapedTitle = unescapeHTMLText(title)    
     item = xbmcgui.ListItem(unescapedTitle)
 
     if not (isFolder or isSpecial):
@@ -451,21 +550,27 @@ def makeListItem(title, artDict, plot, isFolder, isSpecial):
         item.setInfo('video', itemInfo)
     elif isSpecial:
         item.setProperty('IsPlayable', 'true')
+        item.setInfo('video', {'mediatype': 'video', 'title': unescapedTitle})
 
     if artDict:
         item.setArt(artDict)
-
+    
+    item.addContextMenuItems(
+        (('Show Information', 'RunPlugin(' + PLUGIN_URL + '?action=actionShowInfo&url=' + quote_plus(url) + ')'),)
+    )
+    
     return item
 
 
-def makeListItemClean(title, artDict, plot, isFolder, isSpecial):
-    # Variant of the 'makeListItem()' function that tries to format the item label using the season and episode.
-    unescapedTitle = title.replace('&amp;', '&')
+# Variant of the 'makeListItem()' function that tries to format the item label using the season and episode.
+def makeListItemClean(title, url, artDict, plot, isFolder, isSpecial):
+    unescapedTitle = unescapeHTMLText(title)
     
     if isFolder or isSpecial:
         item = xbmcgui.ListItem(unescapedTitle)
         if isSpecial:
             item.setProperty('IsPlayable', 'true')
+            item.setInfo('video', {'mediatype': 'video', 'title': unescapedTitle})
     else:
         title, season, episode, multiPart, episodeTitle = getTitleInfo(unescapedTitle)
         if episode and episode.isdigit():
@@ -490,7 +595,10 @@ def makeListItemClean(title, artDict, plot, isFolder, isSpecial):
 
     if artDict:
         item.setArt(artDict)
-
+        
+    item.addContextMenuItems(
+        (('Show Information', 'RunPlugin(' + PLUGIN_URL + '?action=actionShowInfo&url=' + quote_plus(url) + ')'),)
+    )
     return item
 
 
@@ -536,7 +644,7 @@ def makeLatestCatalog(params):
         )
     )
 
-
+    
 def makePopularCatalog(params):
     # The "Popular & Ongoing" page of the mobile version is more complete.
     r = requestHelper(BASEURL_MOBILE + params['path'])
@@ -649,14 +757,14 @@ def getCatalogProperty(params):
         func = CATALOG_FUNCS.get(path, makeGenericCatalog)
         catalog = func(params)
         setWindowProperty(PROPERTY_CATALOG, catalog)
+        setRawWindowProperty(PROPERTY_CATALOG_PATH, path)
         return catalog
 
     # If these properties are empty (like when coming in from a favourites menu), or if
     # a different catalog (a different URL path) is stored in this property, then reload it.
     currentPath = getRawWindowProperty(PROPERTY_CATALOG_PATH)
     if currentPath != path or 'searchType' in params:
-        catalog = _rebuildCatalog()
-        setRawWindowProperty(PROPERTY_CATALOG_PATH, path)
+        catalog = _rebuildCatalog()        
     else:
         catalog = getWindowProperty(PROPERTY_CATALOG)
         if not catalog:
@@ -794,11 +902,19 @@ def requestHelper(url, data = None):
         requestHelper.session = session
     else:
         session = requestHelper.session
-
+    
+    startTime = time()    
+    
     if data:
-        return requestHelper.session.post(url, data=data, headers={'Referer':BASEURL+'/'}, verify=False, timeout = 8)
+        result = requestHelper.session.post(url, data=data, headers={'Referer':BASEURL+'/'}, verify=False, timeout=8)
     else:
-        return requestHelper.session.get(url, verify=False, timeout=8)
+        result = requestHelper.session.get(url, verify=False, timeout=8)    
+    
+    elapsed = time() - startTime
+    if elapsed <= 2.0:
+        sleep(max(elapsed, 0.5))
+    
+    return result
 
 
 #def getRandomUserAgent():
