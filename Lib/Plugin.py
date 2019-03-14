@@ -911,8 +911,8 @@ def requestHelper(url, data = None):
         result = requestHelper.session.get(url, verify=False, timeout=8)    
     
     elapsed = time() - startTime
-    if elapsed <= 2.0:
-        sleep(max(elapsed, 0.5))
+    if elapsed < 1.5:
+        sleep(max(1.5 - elapsed, 0.5))
     
     return result
 
