@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<addon id="plugin.video.watchnixtoons2" name="WatchNixtoons2" version="0.2.3" provider-name="doko">
+    <requires>
+        <import addon="xbmc.python" version="2.19.0"/>
+        <import addon="script.module.requests"/>
+    </requires>
+    <extension point="xbmc.python.pluginsource" library="Default.py">
+        <provides>video</provides>
+    </extension>
+    <extension point="xbmc.addon.metadata">
+        <news>
+[COLOR orange][B]WatchNixtoons2[/B][/COLOR] - Cartoons &amp; Anime
+[B]0.2.3:[/B]
+- Bug fixes.
+- Improved the [I]Show Information[/I] context-menu.
+
+[B]0.2.2:[/B]
+- New context-menu: [I]Show Information[/I]
+- New 'Latest Movies' area.
+
+[B]0.2.1:[/B]
+- Fixed the Genres search
+- Fixed multipart item titles
+        </news>
+        <description lang="en">
+Watch cartoons and anime from [COLOR khaki][B]WatchCartoonOnline.io[/B][/COLOR].
+
+Support WatchCartoonOnline with a PayPal donation to:
+[COLOR lavender][B]wcohelp@yandex.com[/B][/COLOR]
+
+Add-on by doko.
+        </description>
+        <platform lang="en">all</platform>
+        <disclaimer lang="en">The authors of this addon do not host any of the content found or have any affiliation with the content providers. This add-on only scrapes web pages.</disclaimer>
+    </extension>
+</addon>
