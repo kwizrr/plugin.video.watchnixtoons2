@@ -1,14 +1,13 @@
 # -*- coding: utf-8 -*-
 import re
 import sys
-import json
 import requests
 
 from itertools import chain
 from base64 import b64decode
 from time import time, sleep
 from urlparse import parse_qsl
-from HTMLParser import HTMLParser
+#from HTMLParser import HTMLParser # Not really needed, titles don't use much HTML escaping.
 from string import ascii_uppercase
 from urllib import quote_plus, urlencode
 
@@ -38,14 +37,19 @@ PROPERTY_EPISODE_LIST_URL = 'wnt2.listURL'
 PROPERTY_EPISODE_LIST_DATA = 'wnt2.listData'
 PROPERTY_LATEST_MOVIES = 'wnt2.latestMovies'
 PROPERTY_INFO_ITEMS = 'wnt2.infoItems'
+PROPERTY_SESSION_COOKIE = 'wnt2.cookie'
 
-#HTML_UNESCAPE_FUNC = HTMLParser().unescape # Not really needed, titles don't use much HTML escaping.
+#HTML_UNESCAPE_FUNC = HTMLParser().unescape
 
 ADDON = xbmcaddon.Addon()
 ADDON_SHOW_CATALOG = ADDON.getSetting('showCatalog') == 'true'
 ADDON_ICON = ADDON.getAddonInfo('icon')
 ADDON_ICON_DICT = {'icon': ADDON_ICON, 'thumb': ADDON_ICON, 'poster': ADDON_ICON}
 ADDON_TRAKT_ICON = 'special://home/addons/plugin.video.watchnixtoons2/resources/traktIcon.png'
+
+# To let the source website know it's this plugin.
+WNT2_USER_AGENT = 'Mozilla/5.0 (compatible; WatchNixtoons2/0.2.4; ' \
+'+https://github.com/doko-desuka/plugin.video.watchnixtoons2)'
 
 MEDIA_HEADERS = None # Initialized in 'actionResolve()'.
 
@@ -91,14 +95,6 @@ def actionMenu(params):
         )
     )
     xbmcplugin.endOfDirectory(PLUGIN_ID)
-
-
-def actionShowSettings(params):
-    # Modal dialog, so the program won't continue from this point until user closes\confirms it.
-    ADDON.openSettings()
-    # So right after it is a good time to update any settings globals.
-    global ADDON_SHOW_CATALOG
-    ADDON_SHOW_CATALOG = ADDON.getSetting('showCatalog') == 'true'
 
 
 def actionCatalogMenu(params):
@@ -471,6 +467,14 @@ def actionClearTrakt(params):
             'Watchnixtoons2', 'Trakt tokens already cleared', xbmcgui.NOTIFICATION_INFO, 3500, False
         )
     ADDON = xbmcaddon.Addon()
+    
+    
+def actionShowSettings(params):
+    # Modal dialog, so the program won't continue from this point until user closes\confirms it.
+    ADDON.openSettings()
+    # So right after it is a good time to update any settings globals.
+    global ADDON_SHOW_CATALOG
+    ADDON_SHOW_CATALOG = ADDON.getSetting('showCatalog') == 'true'
 
 
 def actionShowInfo(params):
@@ -527,9 +531,8 @@ def actionShowInfo(params):
         infoItems[url] = (plot, (thumb or 'DefaultVideo.png'))
         setWindowProperty(PROPERTY_INFO_ITEMS, infoItems)
     xbmc.executebuiltin('Container.Update(' + PLUGIN_URL + '?' + params['oldParams'] + ',replace)')
-    
-
-
+        
+        
 def unescapeHTMLText(text):
     text = text.encode('utf-8') if isinstance(text, unicode) else unicode(text, errors='ignore').encode('utf-8')
     # Unescape HTML entities.
@@ -727,7 +730,8 @@ def makePopularCatalog(params):
 
 
 def makeSeriesSearchCatalog(params):
-    r = requestHelper(BASEURL + '/search', {'catara': params['query'], 'konuara': 'series'})
+    r = requestHelper(
+        BASEURL+'/search', data={'catara': params['query'], 'konuara': 'series'}, extraHeaders={'Referer': BASEURL+'/'})
     html = r.text
 
     dataStartIndex = html.find('submit')
@@ -765,7 +769,9 @@ def makeMoviesSearchCatalog(params):
 
 
 def makeEpisodesSearchCatalog(params):
-    r = requestHelper(BASEURL + '/search', {'catara': params['query'], 'konuara': 'episodes'})
+    r = requestHelper(
+        BASEURL+'/search', data={'catara': params['query'], 'konuara': 'episodes'}, extraHeaders={'Referer': BASEURL+'/'}
+    )
     html = r.text
 
     dataStartIndex = html.find('submit')
@@ -844,81 +850,89 @@ def getCatalogProperty(params):
         if not catalog:
             catalog = _rebuildCatalog()
     return catalog
-
-
+    
+    
 def actionResolve(params):
     # Needs to be the BASEURL domain to get multiple video qualities.
     url = params['url']
     r = requestHelper(url if url.startswith('http') else BASEURL + url)
 
-    html = r.text
-    chars = re.search(r' = \[(".*?")\];', html).group(1)
-    spread = int(re.search(r' - (\d+)\)\; }', html).group(1))
+    content = r.content
+    startIndex = content.find(b' = ["')
+    if startIndex == -1:
+        raise Exception('Failed to find encoded data')
+    
+    subContent = content[startIndex:]
+    chars = re.search(b' = \[(".*?")\];', subContent).group(1)
+    spread = int(re.search(r' - (\d+)\)\; }', subContent).group(1))
     iframe = ''
     for char in chars.replace('"', '').split(','):
-        char = b64decode(char)
-        char = ''.join([d for d in char if d.isdigit()])
+        char = ''.join(d for d in b64decode(char) if d.isdigit())
         char = chr(int(char) - spread)
         iframe += char
 
-    sourceUrl = re.search(r'src="(.*?)"', iframe).group(1)
-    if '&#038;' in sourceUrl:
-        sourceUrl = sourceUrl.replace('&#038;', '&')
-    else:
-        sourceUrl = sourceUrl.replace('embed', 'embed-adh')
+    embedPath = re.search(r'src="(.*?)"', iframe).group(1)
+    #sourceURL = sourceURL.replace('embed', 'embed-adh') # Both routes seem to give the same result now.
 
-    r = requestHelper(BASEURL + sourceUrl)
-    # Capture the sources block in the page.
-    temp = re.search(r'sources:\s*(\[\s*?{.*?}\s*?\])(?:\s*}])?', r.text, re.DOTALL).group(1)
-    # Add double quotes around every property name (file: -> "file":).
-    temp = re.sub(r'(\s)(\w.*?)(:\s)', r'\1"\2"\3', temp)
-    # Replace single quotes if applicable, so it can be loaded as JSON data.
-    sources = json.loads(temp.replace("'",'"'))
+    # Request the embedded player page.
+    embedURL = BASEURL + embedPath
+    r2 = requestHelper(embedURL)
+    sourceURL = re.search(b'get\("(.*?)"', r2.content, re.DOTALL).group(1)
+    
+    # Inline code similar to 'requestHelper()'.
+    # The User-Agent for this next request is somehow encoded into the media token, so we make sure to use
+    # the EXACT SAME value later, when playing the media, or else we get a HTTP 404 / 500 error.
+    customHeaders = {
+        'User-Agent': WNT2_USER_AGENT, 'Referer': embedURL, 'X-Requested-With': 'XMLHttpRequest'
+    }
+    if 'Cookie' in r2.request.headers:
+        customHeaders['Cookie'] = r2.request.headers['Cookie']
+    r3 = requests.get(BASEURL + sourceURL, headers=customHeaders, verify=False, timeout=10)
+    if not r3.ok:
+        raise Exception('Sources request failed')
+    jsonData = r3.json()
 
-    # The property names in the sources block vary between 'file' and 'src' and between
-    # 'label' and 'format' depending on if the show is new or not. The JSON data is a
-    # list of dictionaries, one dict for each source.
-    for s in sources:
-        s['_url'] = s['file'] if 'file' in s else s.get('src','')
-        s['_height'] = ''.join(char for char in (s['label'] if 'label' in s else s.get('format','')) if char.isdigit())
-        s['_label'] = s['label'] if 'label' in s else s.get('format', 'video')
-    sources = sorted(sources, key = lambda s: s['_height'])
+    # Only two qualities are ever available: 576p ("SD") and 720p ("HD").
+    sourceBaseURL = jsonData['server'] + '/getvid?evid='
+    sourceTokens = [ ]
+    if 'enc' in jsonData:
+        sourceTokens.append(jsonData['enc']) # The SD token.
+    if 'hd' in jsonData:
+        sourceTokens.append(jsonData['hd']) # The HD token.
 
-    mediaURL = ''
-    if len(sources) == 1:
-        mediaURL = sources[0]['_url']
-    elif len(sources) > 0:
+    mediaURL = None
+    if len(sourceTokens) == 1:
+        mediaURL = sourceBaseURL + sourceTokens[0]
+    elif len(sourceTokens) > 0:
         playbackMethod = ADDON.getSetting('playbackMethod')
         if playbackMethod == '0': # Select quality.
-                selectedIndex = xbmcgui.Dialog().select(
-                    'Select Quality',
-                    tuple(source['_label'] for source in sources)
-                )
+                selectedIndex = xbmcgui.Dialog().select('Select Quality', ['576p (SD)', '720p (HD)'])
                 if selectedIndex != -1:
-                    mediaURL = sources[selectedIndex].get('_url', '')
-        elif playbackMethod == '1': # Play highest quality.
-            mediaURL = sources[-1]['_url']
-        else:
-            mediaURL = sources[0]['_url'] # Play lowest quality.
+                    mediaURL = sourceBaseURL + sourceTokens[selectedIndex]
+        else: # Auto-play user choice.
+            mediaURL = sourceBaseURL + (sourceTokens[1] if playbackMethod == '1' else sourceTokens[0])
 
     if mediaURL:
-        # Need to use the exact same ListItem name/infolabels or else it gets replaced in the Kodi list.
-        item = xbmcgui.ListItem(xbmc.getInfoLabel('ListItem.Label'))
-
-        # Set some media request headers for Kodi to use, it's just good etiquette.
+        # Kodi headers for playing web streamed media.
+        # Since these headers are constant, we can use a hardcoded string instead of rebuilding them every time.
         global MEDIA_HEADERS
         if not MEDIA_HEADERS:
-            MEDIA_HEADERS = '|' + '&'.join(key + '=' + quote_plus(value) for key, value in (
-                    #('User-Agent', getRandomUserAgent()), # No need to spoof a desktop user agent.
-                    ('Accept', 'video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5'),
-                    ('Accept-Language', 'en-US,en;q=0.5'),
-                    ('Connection', 'keep-alive'),
-                    ('Referer', BASEURL + '/')
-                )
-            )
-
+            MEDIA_HEADERS = '|User-Agent=Mozilla%2F5.0+%28compatible%3B+WatchNixtoons2%2F0.2.4%3B' \
+            '+%2Bhttps%3A%2F%2Fgithub.com%2Fdoko-desuka%2Fplugin.video.watchnixtoons2%29' \
+            '&Accept=video%2Fwebm%2Cvideo%2Fogg%2Cvideo%2F%2A%3Bq%3D0.9%2Capplication%2Fogg%3B' \
+            'q%3D0.7%2Caudio%2F%2A%3Bq%3D0.6%2C%2A%2F%2A%3Bq%3D0.5Referer=https%3A%2F%2Fwatchcartoononline.io%2F'
+            # Original method:
+            #MEDIA_HEADERS = '|' + '&'.join(key + '=' + quote_plus(value) for key, value in (
+            #        ('User-Agent', WNT2_USER_AGENT),
+            #        ('Accept', 'video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5'),
+            #        ('Referer', BASEURL + '/'),
+            #    )
+            #)
+            
+        # Need to use the exact same ListItem name & infolabels or else it gets replaced in the Kodi list.
+        item = xbmcgui.ListItem(xbmc.getInfoLabel('ListItem.Label'))
         item.setPath(mediaURL + MEDIA_HEADERS)
-        item.setProperty('IsPlayable', 'true')
+        item.setMimeType('video/mp4')
         episodeString = xbmc.getInfoLabel('ListItem.Episode')
         if episodeString != '' and episodeString != '-1':
             item.setInfo('video',
@@ -957,37 +971,44 @@ def buildURL(query):
                                          for k, v in query.iteritems()}))
 
 
-def xbmcDebug(name, val):
-    xbmc.log('WATCHNIXTOONS2 > ' + name + ' ' + (repr(val) if not isinstance(val, str) else val), xbmc.LOGWARNING)
+def xbmcDebug(*args):
+    xbmc.log('WATCHNIXTOONS2 > '+' '.join((val if isinstance(val, str) else repr(val)) for val in args), xbmc.LOGWARNING)
 
 
-def requestHelper(url, data = None):
-    # If the Session instance doesn't exist yet, create it and store it as a function attribute.
-    if not hasattr(requestHelper, 'session'):
-        session = requests.Session()
-        myUA = 'Mozilla/5.0 (compatible; WatchNixtoons2/0.1.0; +https://github.com/doko-desuka/plugin.video.watchnixtoons2)'
-        myHeaders = {
-            'User-Agent': myUA,
-            'Accept': 'text/html,application/xhtml+xml,application/xml,application/json;q=0.9,image/webp,*/*;q=0.8',
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache'
-        }
-        session.headers.update(myHeaders)
-        requestHelper.session = session
-    else:
-        session = requestHelper.session
-
+def requestHelper(url, data=None, extraHeaders=None):
+    myHeaders = {
+        'User-Agent': WNT2_USER_AGENT,
+        'Accept': 'text/html,application/xhtml+xml,application/xml,application/json;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'DNT': '1'
+    }
+    if extraHeaders:
+        myHeaders.update(extraHeaders)
+    
+    # At the moment it's a single response cookie, "__cfduid". Other cookies are set w/ Javascript by ads.
+    cookieString = getRawWindowProperty(PROPERTY_SESSION_COOKIE)
+    if cookieString:
+        myHeaders['Cookie'] = cookieString
+        
     startTime = time()
-
+    
     if data:
-        result = requestHelper.session.post(url, data=data, headers={'Referer':BASEURL+'/'}, verify=False, timeout=8)
+        result = requests.post(url, data=data, headers=myHeaders, verify=False, timeout=10)
     else:
-        result = requestHelper.session.get(url, verify=False, timeout=8)
-
+        result = requests.get(url, headers=myHeaders, verify=False, timeout=10)
+        
+    # Store the session cookie, if any.
+    if not cookieString and result.cookies:
+        setRawWindowProperty(
+            PROPERTY_SESSION_COOKIE, '; '.join(pair[0]+'='+pair[1] for pair in result.cookies.get_dict().iteritems())
+        )
+        
     elapsed = time() - startTime
     if elapsed < 1.5:
-        sleep(max(1.5 - elapsed, 0.5))
-
+        sleep(1.5 - elapsed)
+    
     return result
 
 
