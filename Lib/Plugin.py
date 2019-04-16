@@ -42,15 +42,18 @@ PROPERTY_SESSION_COOKIE = 'wnt2.cookie'
 #HTML_UNESCAPE_FUNC = HTMLParser().unescape
 
 ADDON = xbmcaddon.Addon()
+# Show catalog: whether to show the catalog categories or to go straight to the "ALL" section with all items visible.
 ADDON_SHOW_CATALOG = ADDON.getSetting('showCatalog') == 'true'
+# Use Latest Releases date: whether to sort the Latest Releases items by their date, or with a catalog.
 ADDON_LATEST_DATE = ADDON.getSetting('useLatestDate') == 'true'
+# Use Latest Releases thumbs: whether to show a little thumbnail available for the Latest Releases items only.
 ADDON_LATEST_THUMBS = ADDON.getSetting('showLatestThumbs') == 'true'
 ADDON_ICON = ADDON.getAddonInfo('icon')
 ADDON_ICON_DICT = {'icon': ADDON_ICON, 'thumb': ADDON_ICON, 'poster': ADDON_ICON}
 ADDON_TRAKT_ICON = 'special://home/addons/plugin.video.watchnixtoons2/resources/traktIcon.png'
 
 # To let the source website know it's this plugin. Also used inside "makeLatestCatalog()" and "actionResolve()".
-WNT2_USER_AGENT = 'Mozilla/5.0 (compatible; WatchNixtoons2/0.2.5; ' \
+WNT2_USER_AGENT = 'Mozilla/5.0 (compatible; WatchNixtoons2/0.2.6; ' \
 '+https://github.com/doko-desuka/plugin.video.watchnixtoons2)'
 
 MEDIA_HEADERS = None # Initialized in 'actionResolve()'.
@@ -739,7 +742,7 @@ def makeLatestCatalog(params):
         raise Exception('Latest catalog scrape fail')
 
     # Thumbnail User-Agent header for Kodi to use. Since it's a constant value, it can be precomputed:
-    thumbHeaders = '|User-Agent=Mozilla%2F5.0+%28compatible%3B+WatchNixtoons2%2F0.2.5%3B' \
+    thumbHeaders = '|User-Agent=Mozilla%2F5.0+%28compatible%3B+WatchNixtoons2%2F0.2.6%3B' \
     '+%2Bhttps%3A%2F%2Fgithub.com%2Fdoko-desuka%2Fplugin.video.watchnixtoons2%29' \
     '&Accept=image%2Fwebp%2C%2A%2F%2A&Referer=https%3A%2F%2Fm.watchcartoononline.io%2F'
     # Original code:
@@ -933,7 +936,9 @@ def actionResolve(params):
     embedURLPattern = b'<meta itemprop="embedURL'
     embedURLIndex = content.find(embedURLPattern)
     if content.find(embedURLPattern, embedURLIndex + 24) != -1: # 24 = len(embedURLPattern).
-        # Multi-chapter episode found. Extract all chapters from the page.
+        # Multi-chapter episode found (or, multiple "embedURL" statements found).
+        # Extract all chapters from the page.
+        
         # Limit the content being parsed to speed up this process.
         startIndex = content.find(b'wco_star_rating')
         endIndex = content.find(b'itemprop="name')
@@ -943,6 +948,7 @@ def actionResolve(params):
         previousTag = b'/span>' if b'postTabs_li_' in subContent else b'/div>'
         previousTagLen = len(previousTag)
 
+        # Go through each HTML block, getting the text index of some point near the data.
         currentPlayerIndex = subContent.find(embedURLPattern) # The data index of the first player in the sub-content.
         dataIndices = [ ]
         while currentPlayerIndex != -1:
@@ -950,21 +956,25 @@ def actionResolve(params):
             dataIndices.append(previousTagIndex + previousTagLen)
             currentPlayerIndex = subContent.find(embedURLPattern, currentPlayerIndex + 24)
 
-        # Selection dialog with the names of the chapters.
+        # Get the titles for the chapters.
         chapterTitleRE = re.compile(b'(.*?)<meta', re.DOTALL)
         titleCleanRE = re.compile(b'<.*?>', re.DOTALL) # To exclude any HTML tags like "<strong>" etc.
-        selectedIndex = xbmcgui.Dialog().select(
-            'Select Chapter',
-            [
-                unescapeHTMLText(titleCleanRE.sub('', chapterTitleRE.search(subContent, pos=dataIndex).group(1)).strip())
-                for dataIndex in dataIndices
-            ]
-        )
-        if selectedIndex != -1:
-            embedURL = _decodeSource(startIndex + dataIndices[selectedIndex])
+        dataTitles = [
+            unescapeHTMLText(titleCleanRE.sub('', chapterTitleRE.search(subContent, pos=dataIndex).group(1)).strip())
+            for dataIndex in dataIndices
+        ]        
+        if dataTitles[0]:
+            # The chapters have titles. Make a selection dialog with these names.
+            selectedIndex = xbmcgui.Dialog().select('Select Chapter', dataTitles)
+            if selectedIndex != -1:
+                embedURL = _decodeSource(startIndex + dataIndices[selectedIndex])
+            else:
+                xbmcplugin.setResolvedUrl(PLUGIN_ID, False, xbmcgui.ListItem())
+                return # User cancelled the chapter selection.
         else:
-            xbmcplugin.setResolvedUrl(PLUGIN_ID, False, xbmcgui.ListItem())
-            return # User cancelled the chapter selection.
+            # A blank title on a chapter means that they are actually just alternative
+            # video players pointing to the same episode. Use whatever is in the first player.
+            embedURL = _decodeSource(startIndex + dataIndices[0])
     else:
         # Normal / single-chapter episode.
         startIndex = content.find(b' = ["', embedURLIndex)
@@ -1028,7 +1038,7 @@ def actionResolve(params):
                 mediaHead = simpleRequest(mediaHead.headers['Location'], requests.head, MEDIA_HEADERS)
             mediaHead.raise_for_status()
         except:
-            mediaURL = cdnBaseURL + sourceTokens[0]
+            mediaURL = cdnBaseURL + sourceTokens[0] # Use whatever is the first source, usually SD.
 
         # Need to use the exact same ListItem name & infolabels when playing or else Kodi replaces the item
         # in the listing.
