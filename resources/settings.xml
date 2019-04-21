@@ -10,6 +10,11 @@
         <setting type="lsep" label="Episodes:"/>
         <setting id="reverseEpisodes" label="Reverse Episode List Order" type="bool" default="false"/>
         <setting id="cleanupEpisodes" label="Clean Episode Titles" type="bool" default="false"/>
+
+        <setting type="sep"/>
+        <setting type="lsep" label="View Mode:"/>
+        <setting id="setViewMode" label="Force View Mode" type="bool" default="false"/>
+        <setting id="viewModeID" label="Enter View Id" type="number" subsetting="true" visible="eq(-1,true)" default=""/>
     </category>
     <category label="Trakt">
         <setting id="clearTrakt" label="Clear Trakt Token" type="action" action="RunPlugin(plugin://plugin.video.watchnixtoons2/?action=actionClearTrakt)"/>

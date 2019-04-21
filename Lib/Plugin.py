@@ -73,7 +73,7 @@ URL_PATHS = {
     'search': '/search',
     'genre': '/search-by-genre'
 }
-
+	
 
 def actionMenu(params):
     def _menuItem(title, data, color):
@@ -131,7 +131,9 @@ def actionCatalogMenu(params):
         else:
             xbmcplugin.addDirectoryItem(PLUGIN_ID, '', xbmcgui.ListItem('No Results :('), isFolder=False)
         xbmcplugin.endOfDirectory(PLUGIN_ID)
-        #xbmc.executebuiltin('Container.SetViewMode(54)') # InfoWall layout, Estuary skin (the default skin).
+#        xbmc.executebuiltin('Container.SetViewMode(54)') # InfoWall layout, Estuary skin (the default skin).
+        setViewMode()
+
     else:
         params['section'] = 'ALL'
         actionCatalogSection(params)
@@ -216,7 +218,8 @@ def actionCatalogSection(params):
 
     xbmcplugin.addDirectoryItems(PLUGIN_ID, tuple(_sectionItemsGen()))
     xbmcplugin.endOfDirectory(PLUGIN_ID)
-    #xbmc.executebuiltin('Container.SetViewMode(54)') # Optional, use a grid layout (Estuary skin).
+#    xbmc.executebuiltin('Container.SetViewMode(54)') # Optional, use a grid layout (Estuary skin).
+    setViewMode()
 
 
 def actionEpisodesMenu(params):
@@ -1154,6 +1157,12 @@ CATALOG_FUNCS = {
     URL_PATHS['popular']: makePopularCatalog,
     URL_PATHS['search']: makeSearchCatalog
 }
+
+
+def setViewMode():
+    if ADDON.getSetting('setViewMode') == 'true':
+        viewModeID = int(ADDON.getSetting('viewModeID'))
+        xbmc.executebuiltin('Container.SetViewMode({})'.format(viewModeID))
 
 
 def main():
