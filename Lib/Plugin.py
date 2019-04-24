@@ -73,7 +73,7 @@ URL_PATHS = {
     'search': '/search',
     'genre': '/search-by-genre'
 }
-	
+
 
 def actionMenu(params):
     def _menuItem(title, data, color):
@@ -86,7 +86,7 @@ def actionMenu(params):
         PLUGIN_ID,
         (
             _menuItem('Latest Releases', {'action': 'actionCatalogMenu', 'path': URL_PATHS['latest']}, 'mediumaquamarine'),
-            _menuItem( # Make the Latest Movies menu go straight to the item list.
+            _menuItem( # Make the Latest Movies menu go straight to the item list, no catalog.
                 'Latest Movies', {'action': 'actionLatestMoviesMenu', 'path': URL_PATHS['latestmovies']}, 'mediumaquamarine'
             ),
             _menuItem('Popular & Ongoing Series', {'action': 'actionCatalogMenu', 'path': URL_PATHS['popular']}, 'mediumaquamarine'),
@@ -131,9 +131,7 @@ def actionCatalogMenu(params):
         else:
             xbmcplugin.addDirectoryItem(PLUGIN_ID, '', xbmcgui.ListItem('No Results :('), isFolder=False)
         xbmcplugin.endOfDirectory(PLUGIN_ID)
-#        xbmc.executebuiltin('Container.SetViewMode(54)') # InfoWall layout, Estuary skin (the default skin).
-        setViewMode()
-
+        setViewMode()        
     else:
         params['section'] = 'ALL'
         actionCatalogSection(params)
@@ -218,8 +216,7 @@ def actionCatalogSection(params):
 
     xbmcplugin.addDirectoryItems(PLUGIN_ID, tuple(_sectionItemsGen()))
     xbmcplugin.endOfDirectory(PLUGIN_ID)
-#    xbmc.executebuiltin('Container.SetViewMode(54)') # Optional, use a grid layout (Estuary skin).
-    setViewMode()
+    setViewMode() # Set the skin layout mode, if the option is enabled.
 
 
 def actionEpisodesMenu(params):
@@ -336,7 +333,8 @@ def actionLatestMoviesMenu(params):
                 )
     xbmcplugin.addDirectoryItems(PLUGIN_ID, tuple(_movieItemsGen()))
     xbmcplugin.endOfDirectory(PLUGIN_ID)
-
+    setViewMode()
+    
 
 # A sub menu, lists search options.
 def actionSearchMenu(params):
@@ -499,19 +497,19 @@ def actionClearTrakt(params):
 def actionShowSettings(params):
     # Modal dialog, so the program won't continue from this point until user closes\confirms it.
     ADDON.openSettings()
-    
+
     # So right after it is a good time to update any settings globals.
-    
+
     global ADDON_SHOW_CATALOG
     ADDON_SHOW_CATALOG = ADDON.getSetting('showCatalog') == 'true'
-    
+
     global ADDON_LATEST_DATE
     # Set the catalog to be reloaded in case the user changed the "Order 'Latest Releases' By Date" setting.
     newLatestDate = ADDON.getSetting('useLatestDate') == 'true'
     if ADDON_LATEST_DATE != newLatestDate and URL_PATHS['latest'] in getRawWindowProperty(PROPERTY_CATALOG_PATH):
         setRawWindowProperty(PROPERTY_CATALOG_PATH, '')
     ADDON_LATEST_DATE = newLatestDate
-    
+
     global ADDON_LATEST_THUMBS
     ADDON_LATEST_THUMBS = ADDON.getSetting('showLatestThumbs') == 'true'
 
@@ -941,7 +939,7 @@ def actionResolve(params):
     if content.find(embedURLPattern, embedURLIndex + 24) != -1: # 24 = len(embedURLPattern).
         # Multi-chapter episode found (or, multiple "embedURL" statements found).
         # Extract all chapters from the page.
-        
+
         # Limit the content being parsed to speed up this process.
         startIndex = content.find(b'wco_star_rating')
         endIndex = content.find(b'itemprop="name')
@@ -951,7 +949,7 @@ def actionResolve(params):
         previousTag = b'/span>' if b'postTabs_li_' in subContent else b'/div>'
         previousTagLen = len(previousTag)
 
-        # Go through each HTML block, getting the text index of some point near the data.
+        # Go through each HTML block, getting the text index of some point near the source data.
         currentPlayerIndex = subContent.find(embedURLPattern) # The data index of the first player in the sub-content.
         dataIndices = [ ]
         while currentPlayerIndex != -1:
@@ -965,14 +963,13 @@ def actionResolve(params):
         dataTitles = [
             unescapeHTMLText(titleCleanRE.sub('', chapterTitleRE.search(subContent, pos=dataIndex).group(1)).strip())
             for dataIndex in dataIndices
-        ]        
+        ]
         if dataTitles[0]:
             # The chapters have titles. Make a selection dialog with these names.
             selectedIndex = xbmcgui.Dialog().select('Select Chapter', dataTitles)
             if selectedIndex != -1:
                 embedURL = _decodeSource(startIndex + dataIndices[selectedIndex])
             else:
-                xbmcplugin.setResolvedUrl(PLUGIN_ID, False, xbmcgui.ListItem())
                 return # User cancelled the chapter selection.
         else:
             # A blank title on a chapter means that they are actually just alternative
@@ -988,7 +985,7 @@ def actionResolve(params):
     sourceURL = re.search(b'get\("(.*?)"', r2.content, re.DOTALL).group(1)
 
     # Inline code similar to 'requestHelper()'.
-    # The User-Agent for this next request is somehow encoded into the media token, so we make sure to use
+    # The User-Agent for this next request is somehow encoded into the media tokens, so we make sure to use
     # the EXACT SAME value later, when playing the media, or else we get a HTTP 404 / 500 error.
     r3 = requestHelper(
         BASEURL + sourceURL,
@@ -1037,17 +1034,18 @@ def actionResolve(params):
         # rare occasions like older shows etc.), try the backup "cdn" domain like their video player does.
         try:
             mediaHead = simpleRequest(mediaURL, requests.head, MEDIA_HEADERS)
-            if mediaHead.status_code == 302:
+            if 'Location' in mediaHead.headers:
                 mediaHead = simpleRequest(mediaHead.headers['Location'], requests.head, MEDIA_HEADERS)
             mediaHead.raise_for_status()
         except:
-            mediaURL = cdnBaseURL + sourceTokens[0] # Use whatever is the first source, usually SD.
+            mediaHead = None
+            mediaURL = cdnBaseURL + sourceTokens[0] # Change the media URL to use the CDN domain.
 
         # Need to use the exact same ListItem name & infolabels when playing or else Kodi replaces the item
         # in the listing.
         item = xbmcgui.ListItem(xbmc.getInfoLabel('ListItem.Label'))
         item.setPath(mediaURL + '|' + '&'.join(key+'='+quote_plus(val) for key, val in MEDIA_HEADERS.iteritems()))
-        item.setMimeType('video/mp4')
+        item.setMimeType(mediaHead.headers['Content-Type'] if mediaHead else 'video/mp4')        
         episodeString = xbmc.getInfoLabel('ListItem.Episode')
         if episodeString != '' and episodeString != '-1':
             item.setInfo('video',
@@ -1084,6 +1082,13 @@ def buildURL(query):
     return (PLUGIN_URL + '?' + urlencode({k: v.encode('utf-8') if isinstance(v, unicode)
                                          else unicode(v, errors='ignore').encode('utf-8')
                                          for k, v in query.iteritems()}))
+
+
+def setViewMode():
+    if ADDON.getSetting('useViewMode') == 'true':
+        viewModeID = ADDON.getSetting('viewModeID')
+        if viewModeID.isdigit():
+            xbmc.executebuiltin('Container.SetViewMode(' + viewModeID + ')')
 
 
 def xbmcDebug(*args):
@@ -1157,12 +1162,6 @@ CATALOG_FUNCS = {
     URL_PATHS['popular']: makePopularCatalog,
     URL_PATHS['search']: makeSearchCatalog
 }
-
-
-def setViewMode():
-    if ADDON.getSetting('setViewMode') == 'true':
-        viewModeID = int(ADDON.getSetting('viewModeID'))
-        xbmc.executebuiltin('Container.SetViewMode({})'.format(viewModeID))
 
 
 def main():
