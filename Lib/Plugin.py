@@ -922,7 +922,7 @@ def actionResolve(params):
     r = requestHelper(url if url.startswith('http') else BASEURL + url)
     content = r.content
 
-    def _decodeSource(startIndex):
+    def _decodeSource(content, startIndex):
         subContent = content[startIndex:]
         chars = re.search(b' = \[(".*?")\];', subContent).group(1)
         spread = int(re.search(r' - (\d+)\)\; }', subContent).group(1))
@@ -939,46 +939,28 @@ def actionResolve(params):
     if content.find(embedURLPattern, embedURLIndex + 24) != -1: # 24 = len(embedURLPattern).
         # Multi-chapter episode found (or, multiple "embedURL" statements found).
         # Extract all chapters from the page.
-
-        # Limit the content being parsed to speed up this process.
-        startIndex = content.find(b'wco_star_rating')
-        endIndex = content.find(b'itemprop="name')
-        subContent = content[startIndex:endIndex] if endIndex != -1 else content[startIndex:]
-
-        # See if the chapters are listed as HTML tabs, or inline video players.
-        previousTag = b'/span>' if b'postTabs_li_' in subContent else b'/div>'
-        previousTagLen = len(previousTag)
-
-        # Go through each HTML block, getting the text index of some point near the source data.
-        currentPlayerIndex = subContent.find(embedURLPattern) # The data index of the first player in the sub-content.
+        currentPlayerIndex = embedURLIndex
         dataIndices = [ ]
         while currentPlayerIndex != -1:
-            previousTagIndex = subContent.rfind(previousTag, 0, currentPlayerIndex)
-            dataIndices.append(previousTagIndex + previousTagLen)
-            currentPlayerIndex = subContent.find(embedURLPattern, currentPlayerIndex + 24)
+            dataIndices.append(currentPlayerIndex)
+            currentPlayerIndex = content.find(embedURLPattern, currentPlayerIndex + 24)
 
-        # Get the titles for the chapters.
-        chapterTitleRE = re.compile(b'(.*?)<meta', re.DOTALL)
-        titleCleanRE = re.compile(b'<.*?>', re.DOTALL) # To exclude any HTML tags like "<strong>" etc.
-        dataTitles = [
-            unescapeHTMLText(titleCleanRE.sub('', chapterTitleRE.search(subContent, pos=dataIndex).group(1)).strip())
-            for dataIndex in dataIndices
-        ]
-        if dataTitles[0]:
-            # The chapters have titles. Make a selection dialog with these names.
-            selectedIndex = xbmcgui.Dialog().select('Select Chapter', dataTitles)
+        if len(dataIndices) > 1:
+            # Make a selection dialog with the chapters.
+            selectedIndex = xbmcgui.Dialog().select(
+                'Select Chapter', ['Chapter '+str(n) for n in xrange(1, len(dataIndices)+1)]
+            )
             if selectedIndex != -1:
-                embedURL = _decodeSource(startIndex + dataIndices[selectedIndex])
+                embedURL = _decodeSource(content, dataIndices[selectedIndex])
             else:
                 return # User cancelled the chapter selection.
         else:
             # A blank title on a chapter means that they are actually just alternative
             # video players pointing to the same episode. Use whatever is in the first player.
-            embedURL = _decodeSource(startIndex + dataIndices[0])
+            embedURL = _decodeSource(content, dataIndices[0])
     else:
         # Normal / single-chapter episode.
-        startIndex = content.find(b' = ["', embedURLIndex)
-        embedURL = _decodeSource(startIndex)
+        embedURL = _decodeSource(content, content.find(b' = ["', embedURLIndex))
 
     # Request the embedded player page.
     r2 = requestHelper(embedURL)
@@ -1035,7 +1017,8 @@ def actionResolve(params):
         try:
             mediaHead = simpleRequest(mediaURL, requests.head, MEDIA_HEADERS)
             if 'Location' in mediaHead.headers:
-                mediaHead = simpleRequest(mediaHead.headers['Location'], requests.head, MEDIA_HEADERS)
+                mediaURL = mediaHead.headers['Location'] # Prefer to play from the redirected location.
+                mediaHead = simpleRequest(mediaURL, requests.head, MEDIA_HEADERS)
             mediaHead.raise_for_status()
         except:
             mediaHead = None
@@ -1045,7 +1028,7 @@ def actionResolve(params):
         # in the listing.
         item = xbmcgui.ListItem(xbmc.getInfoLabel('ListItem.Label'))
         item.setPath(mediaURL + '|' + '&'.join(key+'='+quote_plus(val) for key, val in MEDIA_HEADERS.iteritems()))
-        item.setMimeType(mediaHead.headers['Content-Type'] if mediaHead else 'video/mp4')        
+        item.setMimeType(mediaHead.headers['Content-Type'] if mediaHead else 'video/mp4') # Avoids Kodi's MIME request.
         episodeString = xbmc.getInfoLabel('ListItem.Episode')
         if episodeString != '' and episodeString != '-1':
             item.setInfo('video',

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="plugin.video.watchnixtoons2" name="WatchNixtoons2" version="0.2.6" provider-name="doko">
+<addon id="plugin.video.watchnixtoons2" name="WatchNixtoons2" version="0.2.8" provider-name="doko">
     <requires>
         <import addon="xbmc.python" version="2.20.0"/>
         <import addon="script.module.requests"/>
@@ -10,17 +10,16 @@
     <extension point="xbmc.addon.metadata">
         <news>
 [COLOR orange][B]WatchNixtoons2[/B][/COLOR] - Cartoons &amp; Anime
+[B]0.2.8:[/B]
+- Fixed a redirection bug in media grabbing code.
+- Added support for more types of chapters.
+
+[B]0.2.7:[/B]
+- Added a custom skin layout setting (thanks SerpentDrago/Anon).
+- Minor change to media grabbing code.
 
 [B]0.2.6:[/B]
 - Fix for when the chapter popup has blank labels.
-
-[B]0.2.5:[/B]
-- Added backup host method.
-- Added dialog for rare multi-chapter episodes.
-- Added special order and thumbs to Latest Releases area (see Settings).
-
-[B]0.2.4:[/B]
-- Update to website changes (media playing).
         </news>
         <description lang="en">
 Watch cartoons and anime from [COLOR orange][B]WatchCartoonOnline.io[/B][/COLOR].
