@@ -140,6 +140,7 @@ def actionCatalogMenu(params):
 def actionCatalogSection(params):
     catalog = getCatalogProperty(params)
     path = params['path']
+    # 'isSpecial' is a boolean flag indicating if the items are not episodes, but playable (movies, OVAs etc.).
     isSpecial = path in {URL_PATHS['ova'], URL_PATHS['movies'], URL_PATHS['latest']} and path != URL_PATHS['popular']
     searchType = params.get('searchType', None)
 
@@ -198,7 +199,6 @@ def actionCatalogSection(params):
             # Normal item listing, each 'entry' is (URL, htmlTitle).
             for entry in sectionItems:
                 entryURL = entry[0]
-                # If there's metadata for this entry (requested by the user with "Show Information"), use it.
                 if entryURL in infoItems:
                     itemPlot, itemThumb = infoItems[entryURL]
                     entryArt = {'icon': ADDON_ICON, 'thumb': itemThumb, 'poster': itemThumb}
@@ -276,7 +276,7 @@ def actionEpisodesMenu(params):
         itemParams = {'action': 'actionResolve', 'url': None}
         listIter = iter(listData[2]) if ADDON.getSetting('reverseEpisodes') == 'true' else reversed(listData[2])
         for URL, title in listIter:
-            item = listItemFunc(title, showURL, artDict, plot, isFolder=False, isSpecial=False, oldParams=None)
+            item = listItemFunc(title, URL, artDict, plot, isFolder=False, isSpecial=False, oldParams=None)
             itemParams['url'] = URL
             itemURL = buildURL(itemParams)
             playlist.add(itemURL, item)
@@ -627,11 +627,12 @@ def getTitleInfo(unescapedTitle):
 def makeListItem(title, url, artDict, plot, isFolder, isSpecial, oldParams):
     unescapedTitle = unescapeHTMLText(title)
     item = xbmcgui.ListItem(unescapedTitle)
-
+    isPlayable = False
+    
     if not (isFolder or isSpecial):
         title, season, episode, multiPart, episodeTitle = getTitleInfo(unescapedTitle)
         # Playable content.
-        item.setProperty('IsPlayable', 'true') # Allows the checkmark to be placed on watched episodes.
+        isPlayable = True
         itemInfo = {
             'mediatype': 'episode' if episode else 'tvshow', 'tvshowtitle': title, 'title': episodeTitle, 'plot': plot
         }
@@ -640,7 +641,7 @@ def makeListItem(title, url, artDict, plot, isFolder, isSpecial, oldParams):
             itemInfo['episode'] = int(episode)
         item.setInfo('video', itemInfo)
     elif isSpecial:
-        item.setProperty('IsPlayable', 'true')
+        isPlayable = True
         item.setInfo('video', {'mediatype': 'movie', 'title': unescapedTitle, 'plot': plot})
     else:
         item.setInfo('video', {'mediatype': 'tvshow', 'title': unescapedTitle, 'plot': plot})
@@ -648,16 +649,29 @@ def makeListItem(title, url, artDict, plot, isFolder, isSpecial, oldParams):
     if artDict:
         item.setArt(artDict)
 
-    # Only add the context menu if there's parameter being sent. Episodes don't have this, for example.
+    # Add the context menu items, if necessary.
+    contextMenuList = None    
     if oldParams:
-        item.addContextMenuItems(
+        contextMenuList = [
             (
-                (
-                    'Show Information',
-                    'RunPlugin('+PLUGIN_URL+'?action=actionShowInfo&url='+quote_plus(url)+'&oldParams='+quote_plus(urlencode(oldParams))+')'
-                ),
+                'Show Information',
+                'RunPlugin('+PLUGIN_URL+'?action=actionShowInfo&url='+quote_plus(url)+'&oldParams='+quote_plus(urlencode(oldParams))+')'
             )
+        ]
+    if isPlayable:
+        item.setProperty('IsPlayable', 'true') # Allows the checkmark to be placed on watched episodes.
+        playChaptersItem = (
+            'Play Chapters',
+            'PlayMedia('+PLUGIN_URL+'?action=actionResolve&url='+quote_plus(url)+'&playChapters=1)'
         )
+        if contextMenuList:
+            contextMenuList.append(playChaptersItem)
+        else:
+            contextMenuList = [playChaptersItem]
+            
+    if contextMenuList:
+        item.addContextMenuItems(contextMenuList)
+        
     return item
 
 
@@ -936,7 +950,7 @@ def actionResolve(params):
     # On rare cases an episode might have several "chapters", which are video players on the page.
     embedURLPattern = b'<meta itemprop="embedURL'
     embedURLIndex = content.find(embedURLPattern)
-    if content.find(embedURLPattern, embedURLIndex + 24) != -1: # 24 = len(embedURLPattern).
+    if 'playChapters' in params and content.find(embedURLPattern, embedURLIndex + 24) != -1: # 24 = len(embedURLPattern).
         # Multi-chapter episode found (or, multiple "embedURL" statements found).
         # Extract all chapters from the page.
         currentPlayerIndex = embedURLIndex
@@ -945,22 +959,19 @@ def actionResolve(params):
             dataIndices.append(currentPlayerIndex)
             currentPlayerIndex = content.find(embedURLPattern, currentPlayerIndex + 24)
 
-        if len(dataIndices) > 1:
-            # Make a selection dialog with the chapters.
-            selectedIndex = xbmcgui.Dialog().select(
-                'Select Chapter', ['Chapter '+str(n) for n in xrange(1, len(dataIndices)+1)]
-            )
-            if selectedIndex != -1:
-                embedURL = _decodeSource(content, dataIndices[selectedIndex])
-            else:
-                return # User cancelled the chapter selection.
+        # Make a selection dialog with the chapters.
+        selectedIndex = xbmcgui.Dialog().select(
+            'Select Chapter', ['Chapter '+str(n) for n in xrange(1, len(dataIndices)+1)]
+        )
+        if selectedIndex != -1:
+            embedURL = _decodeSource(content, dataIndices[selectedIndex])
         else:
-            # A blank title on a chapter means that they are actually just alternative
-            # video players pointing to the same episode. Use whatever is in the first player.
-            embedURL = _decodeSource(content, dataIndices[0])
+            return # User cancelled the chapter selection.
     else:
         # Normal / single-chapter episode.
         embedURL = _decodeSource(content, content.find(b' = ["', embedURLIndex))
+        if 'playChapters' in params: # User asked to play multiple chapters, but only one chapter/video player found.
+            xbmcgui.Dialog().notification('Watchnixtoons2', 'Only 1 chapter found...', ADDON_ICON, 2000, False)
 
     # Request the embedded player page.
     r2 = requestHelper(embedURL)
