@@ -131,7 +131,7 @@ def actionCatalogMenu(params):
         else:
             xbmcplugin.addDirectoryItem(PLUGIN_ID, '', xbmcgui.ListItem('No Results :('), isFolder=False)
         xbmcplugin.endOfDirectory(PLUGIN_ID)
-        setViewMode()        
+        setViewMode()
     else:
         params['section'] = 'ALL'
         actionCatalogSection(params)
@@ -334,7 +334,7 @@ def actionLatestMoviesMenu(params):
     xbmcplugin.addDirectoryItems(PLUGIN_ID, tuple(_movieItemsGen()))
     xbmcplugin.endOfDirectory(PLUGIN_ID)
     setViewMode()
-    
+
 
 # A sub menu, lists search options.
 def actionSearchMenu(params):
@@ -628,7 +628,7 @@ def makeListItem(title, url, artDict, plot, isFolder, isSpecial, oldParams):
     unescapedTitle = unescapeHTMLText(title)
     item = xbmcgui.ListItem(unescapedTitle)
     isPlayable = False
-    
+
     if not (isFolder or isSpecial):
         title, season, episode, multiPart, episodeTitle = getTitleInfo(unescapedTitle)
         # Playable content.
@@ -650,7 +650,7 @@ def makeListItem(title, url, artDict, plot, isFolder, isSpecial, oldParams):
         item.setArt(artDict)
 
     # Add the context menu items, if necessary.
-    contextMenuList = None    
+    contextMenuList = None
     if oldParams:
         contextMenuList = [
             (
@@ -668,26 +668,26 @@ def makeListItem(title, url, artDict, plot, isFolder, isSpecial, oldParams):
             contextMenuList.append(playChaptersItem)
         else:
             contextMenuList = [playChaptersItem]
-            
     if contextMenuList:
         item.addContextMenuItems(contextMenuList)
-        
+
     return item
 
 
 # Variant of the 'makeListItem()' function that tries to format the item label using the season and episode.
 def makeListItemClean(title, url, artDict, plot, isFolder, isSpecial, oldParams):
     unescapedTitle = unescapeHTMLText(title)
+    isPlayable = False
 
     if isFolder or isSpecial:
         item = xbmcgui.ListItem(unescapedTitle)
         if isSpecial:
-            item.setProperty('IsPlayable', 'true')
+            isPlayable = True
             item.setInfo('video', {'mediatype': 'video', 'title': unescapedTitle})
     else:
         title, season, episode, multiPart, episodeTitle = getTitleInfo(unescapedTitle)
         if episode and episode.isdigit():
-            # The clean episode label will have this format: SxEE Episode Name, with S and EE standing for digits.
+            # The clean episode label will have this format: "SxEE Episode Name", with S and EE standing for digits.
             item = xbmcgui.ListItem(
                 '[B]' + season + 'x' + episode.zfill(2) + ('-' + multiPart if multiPart else '') + '[/B] '
                 + (episodeTitle or title)
@@ -704,20 +704,33 @@ def makeListItemClean(title, url, artDict, plot, isFolder, isSpecial, oldParams)
             item = xbmcgui.ListItem(title)
             itemInfo = {'mediatype': 'tvshow', 'tvshowtitle': title, 'title': title, 'plot': plot}
         item.setInfo('video', itemInfo)
-        item.setProperty('IsPlayable', 'true')
+        isPlayable = True
 
     if artDict:
         item.setArt(artDict)
 
+    # Add the context menu items, if necessary.
+    contextMenuList = None
     if oldParams:
-        item.addContextMenuItems(
+        contextMenuList = [
             (
-                (
-                    'Show Information',
-                    'RunPlugin('+PLUGIN_URL+'?action=actionShowInfo&url='+quote_plus(url)+'&oldParams='+quote_plus(urlencode(oldParams))+')'
-                ),
+                'Show Information',
+                'RunPlugin('+PLUGIN_URL+'?action=actionShowInfo&url='+quote_plus(url)+'&oldParams='+quote_plus(urlencode(oldParams))+')'
             )
+        ]
+    if isPlayable:
+        item.setProperty('IsPlayable', 'true') # Allows the checkmark to be placed on watched episodes.
+        playChaptersItem = (
+            'Play Chapters',
+            'PlayMedia('+PLUGIN_URL+'?action=actionResolve&url='+quote_plus(url)+'&playChapters=1)'
         )
+        if contextMenuList:
+            contextMenuList.append(playChaptersItem)
+        else:
+            contextMenuList = [playChaptersItem]
+    if contextMenuList:
+        item.addContextMenuItems(contextMenuList)
+
     return item
 
 
