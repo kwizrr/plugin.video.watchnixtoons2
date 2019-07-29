@@ -52,7 +52,7 @@ ADDON_ICON_DICT = {'icon': ADDON_ICON, 'thumb': ADDON_ICON, 'poster': ADDON_ICON
 ADDON_TRAKT_ICON = 'special://home/addons/plugin.video.watchnixtoons2/resources/traktIcon.png'
 
 # To let the source website know it's this plugin. Also used inside "makeLatestCatalog()" and "actionResolve()".
-WNT2_USER_AGENT = 'Mozilla/5.0 (compatible; WatchNixtoons2/0.3.1; ' \
+WNT2_USER_AGENT = 'Mozilla/5.0 (compatible; WatchNixtoons2/0.3.2; ' \
 '+https://github.com/doko-desuka/plugin.video.watchnixtoons2)'
 
 MEDIA_HEADERS = None # Initialized in 'actionResolve()'.
@@ -988,23 +988,10 @@ def actionResolve(params):
 
     # Request the embedded player page.
     r2 = requestHelper(unescapeHTMLText(embedURL)) # Sometimes a '&#038;' symbol is present in this URL.
-    
     html = r2.text
-    if 'sources:' in html:
-        # Alternative video player page, with plain stream links.        
-        sourcesBlock = re.search('sources:\s*?\[(.*?)\]', html, re.DOTALL).group(1)
-        streamPattern = re.compile('\{\s*?file:\s*?"(.*?)"(?:,\s*?label:\s*?"(.*?)")?')
-        sourceURLs = [
-            (
-                # Order the items as (LABEL (or empty string), URL). Replace 576p with 480p (that height is wrong).
-                sourceMatch.group(2).replace('576', '480'), sourceMatch.group(1)
-            )
-            for sourceMatch in streamPattern.finditer(sourcesBlock)
-        ]            
-        # Use the backup link in the 'onError' handler of the 'jw' player.
-        backupMatch = streamPattern.search(html[html.find(b'jw.onError'):])
-        backupURL = backupMatch.group(1) if backupMatch else ''
-    else:
+    
+    # Find the stream URLs.
+    if 'getvid?evid' in html:
         # Query-style stream getting.
         sourceURL = re.search(b'get\("(.*?)"', html, re.DOTALL).group(1)
 
@@ -1033,6 +1020,18 @@ def actionResolve(params):
             sourceURLs.append(('720 (HD)', sourceBaseURL + hdToken))            
         # Use the same backup stream method as the source: cdn domain + SD stream.
         backupURL = jsonData.get('cdn', '') + '/getvid?evid=' + (sdToken or hdToken)
+    else:
+        # Alternative video player page, with plain stream links in the JWPlayer javascript.        
+        sourcesBlock = re.search('sources:\s*?\[(.*?)\]', html, re.DOTALL).group(1)
+        streamPattern = re.compile('\{\s*?file:\s*?"(.*?)"(?:,\s*?label:\s*?"(.*?)")?')
+        sourceURLs = [
+            # Order the items as (LABEL (or empty string), URL).
+            (sourceMatch.group(2), sourceMatch.group(1))
+            for sourceMatch in streamPattern.finditer(sourcesBlock)
+        ]            
+        # Use the backup link in the 'onError' handler of the 'jw' player.
+        backupMatch = streamPattern.search(html[html.find(b'jw.onError'):])
+        backupURL = backupMatch.group(1) if backupMatch else ''
 
     mediaURL = None
     if len(sourceURLs) == 1: # Only one quality available.
@@ -1047,7 +1046,7 @@ def actionResolve(params):
                     mediaURL = sourceURLs[selectedIndex][1]
         else: # Auto-play user choice.
             sortedSources = sorted(sourceURLs)
-            mediaURL = sortedSources[-1] if playbackMethod == '1' else sortedSources[0]
+            mediaURL = sortedSources[-1][1] if playbackMethod == '1' else sortedSources[0][1]
 
     if mediaURL:
         # Kodi headers for playing web streamed media.
