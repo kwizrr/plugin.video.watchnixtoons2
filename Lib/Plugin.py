@@ -7,7 +7,6 @@ from itertools import chain
 from base64 import b64decode
 from time import time, sleep
 from urlparse import parse_qsl
-#from HTMLParser import HTMLParser # Not really needed, titles don't use much HTML escaping.
 from string import ascii_uppercase
 from urllib import quote_plus, urlencode
 
@@ -53,7 +52,7 @@ ADDON_ICON_DICT = {'icon': ADDON_ICON, 'thumb': ADDON_ICON, 'poster': ADDON_ICON
 ADDON_TRAKT_ICON = 'special://home/addons/plugin.video.watchnixtoons2/resources/traktIcon.png'
 
 # To let the source website know it's this plugin. Also used inside "makeLatestCatalog()" and "actionResolve()".
-WNT2_USER_AGENT = 'Mozilla/5.0 (compatible; WatchNixtoons2/0.2.6; ' \
+WNT2_USER_AGENT = 'Mozilla/5.0 (compatible; WatchNixtoons2/0.3.1; ' \
 '+https://github.com/doko-desuka/plugin.video.watchnixtoons2)'
 
 MEDIA_HEADERS = None # Initialized in 'actionResolve()'.
@@ -129,7 +128,7 @@ def actionCatalogMenu(params):
                 actionCatalogSection(params)
                 return
         else:
-            xbmcplugin.addDirectoryItem(PLUGIN_ID, '', xbmcgui.ListItem('No Results :('), isFolder=False)
+            xbmcplugin.addDirectoryItem(PLUGIN_ID, '', xbmcgui.ListItem('(No Results)'), isFolder=False)
         xbmcplugin.endOfDirectory(PLUGIN_ID)
         setViewMode()
     else:
@@ -434,15 +433,16 @@ def actionTraktMenu(params):
 
         def _traktMenuItemsGen():
             traktIconDict = {'icon': ADDON_TRAKT_ICON, 'thumb': ADDON_TRAKT_ICON, 'poster': ADDON_TRAKT_ICON}
-            for list in instance.getUserLists(ADDON):
-                item = xbmcgui.ListItem(list['name'])
-                item.setArt(traktIconDict)
-                item.setInfo('video', {'title': list['name'], 'plot': list['description']})
-                yield (
-                    buildURL({'action': 'actionTraktList', 'traktList': str(list['ids']['trakt'])}),
-                    item,
-                    True
-                )
+            for lists, suffix in instance.getUserLists(ADDON):
+                for list in lists:
+                    item = xbmcgui.ListItem(list['name'] + suffix)
+                    item.setArt(traktIconDict)
+                    item.setInfo('video', {'title': list['name'] + suffix, 'plot': list['description']})
+                    yield (
+                        buildURL({'action': 'actionTraktList', 'traktList': str(list['ids']['trakt'])}),
+                        item,
+                        True
+                    )
 
         xbmcplugin.addDirectoryItems(PLUGIN_ID, tuple(_traktMenuItemsGen()))
         xbmcplugin.endOfDirectory(PLUGIN_ID) # Only finish the directory if the user is authorized it.
@@ -454,8 +454,9 @@ def actionTraktList(params):
 
         def _traktListItemsGen():
             traktIconDict = {'icon': ADDON_TRAKT_ICON, 'thumb': ADDON_TRAKT_ICON, 'poster': ADDON_TRAKT_ICON}
-            for itemName in sorted(instance.getListItems(params['traktList'], ADDON)):
+            for itemName, overview in sorted(instance.getListItems(params['traktList'], ADDON)):
                 item = xbmcgui.ListItem(itemName)
+                item.setInfo('video', {'title': itemName, 'plot': overview, 'mediatype': 'tvshow'})
                 item.setArt(traktIconDict)
                 yield (
                     # Trakt items will lead straight to a show name search.
@@ -563,7 +564,6 @@ def actionShowInfo(params):
 
     # New way, using a persistent property holding a dictionary, and refreshing the directory listing.
     oldParams = dict(parse_qsl(params['oldParams']))
-    xbmcDebug('oldParams', oldParams)
     if plot or thumb:
         infoItems = getWindowProperty(PROPERTY_INFO_ITEMS) or { }
         infoItems[url] = (plot, (thumb or 'DefaultVideo.png'))
@@ -987,43 +987,67 @@ def actionResolve(params):
             xbmcgui.Dialog().notification('Watchnixtoons2', 'Only 1 chapter found...', ADDON_ICON, 2000, False)
 
     # Request the embedded player page.
-    r2 = requestHelper(embedURL)
-    sourceURL = re.search(b'get\("(.*?)"', r2.content, re.DOTALL).group(1)
+    r2 = requestHelper(unescapeHTMLText(embedURL)) # Sometimes a '&#038;' symbol is present in this URL.
+    
+    html = r2.text
+    if 'sources:' in html:
+        # Alternative video player page, with plain stream links.        
+        sourcesBlock = re.search('sources:\s*?\[(.*?)\]', html, re.DOTALL).group(1)
+        streamPattern = re.compile('\{\s*?file:\s*?"(.*?)"(?:,\s*?label:\s*?"(.*?)")?')
+        sourceURLs = [
+            (
+                # Order the items as (LABEL (or empty string), URL). Replace 576p with 480p (that height is wrong).
+                sourceMatch.group(2).replace('576', '480'), sourceMatch.group(1)
+            )
+            for sourceMatch in streamPattern.finditer(sourcesBlock)
+        ]            
+        # Use the backup link in the 'onError' handler of the 'jw' player.
+        backupMatch = streamPattern.search(html[html.find(b'jw.onError'):])
+        backupURL = backupMatch.group(1) if backupMatch else ''
+    else:
+        # Query-style stream getting.
+        sourceURL = re.search(b'get\("(.*?)"', html, re.DOTALL).group(1)
 
-    # Inline code similar to 'requestHelper()'.
-    # The User-Agent for this next request is somehow encoded into the media tokens, so we make sure to use
-    # the EXACT SAME value later, when playing the media, or else we get a HTTP 404 / 500 error.
-    r3 = requestHelper(
-        BASEURL + sourceURL,
-        data = None,
-        extraHeaders = {
-            'User-Agent': WNT2_USER_AGENT, 'Accept': '*/*', 'Referer': embedURL, 'X-Requested-With': 'XMLHttpRequest'
-        }
-    )
-    if not r3.ok:
-        raise Exception('Sources request failed')
-    jsonData = r3.json()
-
-    # Only two qualities are ever available: 480p ("SD") and 720p ("HD").
-    sourceBaseURL = jsonData['server'] + '/getvid?evid='
-    cdnBaseURL = jsonData.get('cdn', '') + '/getvid?evid='
-    sourceTokens = [ ]
-    if jsonData.get('enc', None):
-        sourceTokens.append(jsonData['enc']) # The SD token.
-    if jsonData.get('hd', None):
-        sourceTokens.append(jsonData['hd']) # The HD token.
+        # Inline code similar to 'requestHelper()'.
+        # The User-Agent for this next request is somehow encoded into the media tokens, so we make sure to use
+        # the EXACT SAME value later, when playing the media, or else we get a HTTP 404 / 500 error.
+        r3 = requestHelper(
+            BASEURL + sourceURL,
+            data = None,
+            extraHeaders = {
+                'User-Agent': WNT2_USER_AGENT, 'Accept': '*/*', 'Referer': embedURL, 'X-Requested-With': 'XMLHttpRequest'
+            }
+        )
+        if not r3.ok:
+            raise Exception('Sources XMLHttpRequest request failed')
+        jsonData = r3.json()
+        
+        # Only two qualities are ever available: 480p ("SD") and 720p ("HD").        
+        sourceURLs = [ ]
+        sdToken = jsonData.get('enc', '')
+        hdToken = jsonData.get('hd', '')
+        sourceBaseURL = jsonData.get('server', '') + '/getvid?evid='
+        if sdToken:
+            sourceURLs.append(('480 (SD)', sourceBaseURL + sdToken)) # Order the items as (LABEL, URL).
+        if hdToken:
+            sourceURLs.append(('720 (HD)', sourceBaseURL + hdToken))            
+        # Use the same backup stream method as the source: cdn domain + SD stream.
+        backupURL = jsonData.get('cdn', '') + '/getvid?evid=' + (sdToken or hdToken)
 
     mediaURL = None
-    if len(sourceTokens) == 1: # Only one quality available.
-        mediaURL = sourceBaseURL + sourceTokens[0]
-    elif len(sourceTokens) > 0:
+    if len(sourceURLs) == 1: # Only one quality available.
+        mediaURL = sourceURLs[0][1]
+    elif len(sourceURLs) > 0:
         playbackMethod = ADDON.getSetting('playbackMethod')
         if playbackMethod == '0': # Select quality.
-                selectedIndex = xbmcgui.Dialog().select('Select Quality', ['480p (SD)', '720p (HD)'])
+                selectedIndex = xbmcgui.Dialog().select(
+                    'Select Quality', [(sourceItem[0] or '?') for sourceItem in sourceURLs]
+                )
                 if selectedIndex != -1:
-                    mediaURL = sourceBaseURL + sourceTokens[selectedIndex]
+                    mediaURL = sourceURLs[selectedIndex][1]
         else: # Auto-play user choice.
-            mediaURL = sourceBaseURL + (sourceTokens[1] if playbackMethod == '1' else sourceTokens[0])
+            sortedSources = sorted(sourceURLs)
+            mediaURL = sortedSources[-1] if playbackMethod == '1' else sortedSources[0]
 
     if mediaURL:
         # Kodi headers for playing web streamed media.
@@ -1035,24 +1059,20 @@ def actionResolve(params):
                 'Connection': 'keep-alive',
                 'Referer': BASEURL + '/'
             }
-
-        # See if the media is available on the default "server" domain, and if it's not (as it happens on
-        # rare occasions like older shows etc.), try the backup "cdn" domain like their video player does.
-        try:
-            mediaHead = simpleRequest(mediaURL, requests.head, MEDIA_HEADERS)
-            if 'Location' in mediaHead.headers:
-                mediaURL = mediaHead.headers['Location'] # Prefer to play from the redirected location.
-                mediaHead = simpleRequest(mediaURL, requests.head, MEDIA_HEADERS)
-            mediaHead.raise_for_status()
-        except:
-            mediaHead = None
-            mediaURL = cdnBaseURL + sourceTokens[0] # Change the media URL to use the CDN domain.
-
-        # Need to use the exact same ListItem name & infolabels when playing or else Kodi replaces the item
-        # in the listing.
+            
+        # Try to un-redirect the chosen media URL.
+        # If it fails, try to un-resolve the backup URL. If not even the backup URL is working, abort playing.
+        mediaHead = solveMediaRedirect(mediaURL, MEDIA_HEADERS)
+        if not mediaHead:
+            mediaHead = solveMediaRedirect(backupURL, MEDIA_HEADERS)
+        if not mediaHead:           
+            return xbmcplugin.setResolvedUrl(PLUGIN_ID, False, xbmcgui.ListItem())
+            
+        # Need to use the exact same ListItem name & infolabels when playing or else Kodi replaces that item
+        # in the UI listing.
         item = xbmcgui.ListItem(xbmc.getInfoLabel('ListItem.Label'))
-        item.setPath(mediaURL + '|' + '&'.join(key+'='+quote_plus(val) for key, val in MEDIA_HEADERS.iteritems()))
-        item.setMimeType(mediaHead.headers['Content-Type'] if mediaHead else 'video/mp4') # Avoids Kodi's MIME request.
+        item.setPath(mediaHead.url + '|' + '&'.join(key+'='+quote_plus(val) for key, val in MEDIA_HEADERS.iteritems()))
+        item.setMimeType(mediaHead.headers.get('Content-Type', 'video/mp4')) # Avoids Kodi's MIME request.
         episodeString = xbmc.getInfoLabel('ListItem.Episode')
         if episodeString != '' and episodeString != '-1':
             item.setInfo('video',
@@ -1104,7 +1124,23 @@ def xbmcDebug(*args):
 
 def simpleRequest(url, requestFunc, headers):
     return requestFunc(url, headers=headers, verify=False, timeout=10)
-
+    
+    
+def solveMediaRedirect(url, headers):
+    # Use HEAD requests to fulfill possible 302 redirections.
+    # Return the final stream HEAD response.
+    done = False
+    while not done:
+        try:
+            mediaHead = simpleRequest(url, requests.head, headers)
+            if 'Location' in mediaHead.headers:
+                url = mediaHead.headers['Location'] # Change the URL to the redirected location and repeat the HEAD.
+            else:
+                mediaHead.raise_for_status()
+                return mediaHead # Return the response.
+        except:
+            return None # Return nothing on failure.
+    
 
 def requestHelper(url, data=None, extraHeaders=None):
     myHeaders = {

@@ -66,16 +66,23 @@ class SimpleTrakt():
         else:
             return False
 
-
+        
     def getUserLists(self, addon):
-        r = self._traktRequest('/users/me/lists', data=None, addon=addon)
-        return r.json() if r.ok else ()
+        r1 = self._traktRequest('/users/me/lists', data=None, addon=addon)
+        r2 = self._traktRequest('/users/likes/lists', data=None, addon=addon)
+        return (
+            ((r1.json() if r1.ok else ()), 'ASDFASDF'), # No suffix needed for the user's own lists.
+            (([i['list'] for i in r2.json()] if r2.ok else ()), ' (Liked)') # Add the suffix "(Liked)' for liked lists.
+        )
 
 
     def getListItems(self, listID, addon):
-        r = self._traktRequest('/users/me/lists/' + listID + '/items/movie,show', data=None, addon=addon)
+        r = self._traktRequest('/users/me/lists/' + listID + '/items/movie,show?extended=full', data=None, addon=addon)
         if r.ok:
-            return set(item[item['type']]['title'] for item in r.json())
+            return set(
+                (item[item['type']]['title'], item[item['type']]['overview'])
+                for item in r.json()
+            )
         else:
             return ()
 
