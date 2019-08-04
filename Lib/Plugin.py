@@ -433,16 +433,15 @@ def actionTraktMenu(params):
 
         def _traktMenuItemsGen():
             traktIconDict = {'icon': ADDON_TRAKT_ICON, 'thumb': ADDON_TRAKT_ICON, 'poster': ADDON_TRAKT_ICON}
-            for lists, suffix in instance.getUserLists(ADDON):
-                for list in lists:
-                    item = xbmcgui.ListItem(list['name'] + suffix)
-                    item.setArt(traktIconDict)
-                    item.setInfo('video', {'title': list['name'] + suffix, 'plot': list['description']})
-                    yield (
-                        buildURL({'action': 'actionTraktList', 'traktList': str(list['ids']['trakt'])}),
-                        item,
-                        True
-                    )
+            for listName, listURL, listDescription in instance.getUserLists(ADDON):
+                item = xbmcgui.ListItem(listName)
+                item.setArt(traktIconDict)
+                item.setInfo('video', {'title': listName, 'plot': listDescription})
+                yield (
+                    buildURL({'action': 'actionTraktList', 'listURL': listURL}),
+                    item,
+                    True
+                )
 
         xbmcplugin.addDirectoryItems(PLUGIN_ID, tuple(_traktMenuItemsGen()))
         xbmcplugin.endOfDirectory(PLUGIN_ID) # Only finish the directory if the user is authorized it.
@@ -454,7 +453,7 @@ def actionTraktList(params):
 
         def _traktListItemsGen():
             traktIconDict = {'icon': ADDON_TRAKT_ICON, 'thumb': ADDON_TRAKT_ICON, 'poster': ADDON_TRAKT_ICON}
-            for itemName, overview in sorted(instance.getListItems(params['traktList'], ADDON)):
+            for itemName, overview in sorted(instance.getListItems(params['listURL'], ADDON)):
                 item = xbmcgui.ListItem(itemName)
                 item.setInfo('video', {'title': itemName, 'plot': overview, 'mediatype': 'tvshow'})
                 item.setArt(traktIconDict)
@@ -989,7 +988,7 @@ def actionResolve(params):
     # Request the embedded player page.
     r2 = requestHelper(unescapeHTMLText(embedURL)) # Sometimes a '&#038;' symbol is present in this URL.
     html = r2.text
-    
+
     # Find the stream URLs.
     if 'getvid?evid' in html:
         # Query-style stream getting.
@@ -1008,8 +1007,8 @@ def actionResolve(params):
         if not r3.ok:
             raise Exception('Sources XMLHttpRequest request failed')
         jsonData = r3.json()
-        
-        # Only two qualities are ever available: 480p ("SD") and 720p ("HD").        
+
+        # Only two qualities are ever available: 480p ("SD") and 720p ("HD").
         sourceURLs = [ ]
         sdToken = jsonData.get('enc', '')
         hdToken = jsonData.get('hd', '')
@@ -1017,18 +1016,18 @@ def actionResolve(params):
         if sdToken:
             sourceURLs.append(('480 (SD)', sourceBaseURL + sdToken)) # Order the items as (LABEL, URL).
         if hdToken:
-            sourceURLs.append(('720 (HD)', sourceBaseURL + hdToken))            
+            sourceURLs.append(('720 (HD)', sourceBaseURL + hdToken))
         # Use the same backup stream method as the source: cdn domain + SD stream.
         backupURL = jsonData.get('cdn', '') + '/getvid?evid=' + (sdToken or hdToken)
     else:
-        # Alternative video player page, with plain stream links in the JWPlayer javascript.        
+        # Alternative video player page, with plain stream links in the JWPlayer javascript.
         sourcesBlock = re.search('sources:\s*?\[(.*?)\]', html, re.DOTALL).group(1)
         streamPattern = re.compile('\{\s*?file:\s*?"(.*?)"(?:,\s*?label:\s*?"(.*?)")?')
         sourceURLs = [
             # Order the items as (LABEL (or empty string), URL).
             (sourceMatch.group(2), sourceMatch.group(1))
             for sourceMatch in streamPattern.finditer(sourcesBlock)
-        ]            
+        ]
         # Use the backup link in the 'onError' handler of the 'jw' player.
         backupMatch = streamPattern.search(html[html.find(b'jw.onError'):])
         backupURL = backupMatch.group(1) if backupMatch else ''
@@ -1058,15 +1057,15 @@ def actionResolve(params):
                 'Connection': 'keep-alive',
                 'Referer': BASEURL + '/'
             }
-            
+
         # Try to un-redirect the chosen media URL.
         # If it fails, try to un-resolve the backup URL. If not even the backup URL is working, abort playing.
         mediaHead = solveMediaRedirect(mediaURL, MEDIA_HEADERS)
         if not mediaHead:
             mediaHead = solveMediaRedirect(backupURL, MEDIA_HEADERS)
-        if not mediaHead:           
+        if not mediaHead:
             return xbmcplugin.setResolvedUrl(PLUGIN_ID, False, xbmcgui.ListItem())
-            
+
         # Need to use the exact same ListItem name & infolabels when playing or else Kodi replaces that item
         # in the UI listing.
         item = xbmcgui.ListItem(xbmc.getInfoLabel('ListItem.Label'))
@@ -1123,8 +1122,8 @@ def xbmcDebug(*args):
 
 def simpleRequest(url, requestFunc, headers):
     return requestFunc(url, headers=headers, verify=False, timeout=10)
-    
-    
+
+
 def solveMediaRedirect(url, headers):
     # Use HEAD requests to fulfill possible 302 redirections.
     # Return the final stream HEAD response.
@@ -1139,7 +1138,7 @@ def solveMediaRedirect(url, headers):
                 return mediaHead # Return the response.
         except:
             return None # Return nothing on failure.
-    
+
 
 def requestHelper(url, data=None, extraHeaders=None):
     myHeaders = {

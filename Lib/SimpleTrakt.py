@@ -66,18 +66,28 @@ class SimpleTrakt():
         else:
             return False
 
-        
+
     def getUserLists(self, addon):
         r1 = self._traktRequest('/users/me/lists', data=None, addon=addon)
         r2 = self._traktRequest('/users/likes/lists', data=None, addon=addon)
-        return (
-            ((r1.json() if r1.ok else ()), 'ASDFASDF'), # No suffix needed for the user's own lists.
-            (([i['list'] for i in r2.json()] if r2.ok else ()), ' (Liked)') # Add the suffix "(Liked)' for liked lists.
+
+        def _traktDataGen(*iterables):
+            for suffix, lists in iterables:
+                for list in lists:
+                    yield (
+                        list['name'] + suffix,
+                        '/users/%s/lists/%i' % (list['user']['ids']['slug'], list['ids']['trakt']),
+                        list['description']
+                    )
+
+        return _traktDataGen(
+            ('', (r1.json() if r1.ok else ())),
+            (' (Liked)', ((item['list'] for item in r2.json()) if r2.ok else ()))
         )
 
 
-    def getListItems(self, listID, addon):
-        r = self._traktRequest('/users/me/lists/' + listID + '/items/movie,show?extended=full', data=None, addon=addon)
+    def getListItems(self, listURL, addon):
+        r = self._traktRequest(listURL + '/items/movie,show?extended=full', data=None, addon=addon)
         if r.ok:
             return set(
                 (item[item['type']]['title'], item[item['type']]['overview'])
@@ -128,7 +138,7 @@ class SimpleTrakt():
             else:
                 progressDialog.close()
             return None
-            
+
         else:
             self._notification('Watchnixtoons2', 'Trakt request failed', useSound=True, isError=True)
             return None
