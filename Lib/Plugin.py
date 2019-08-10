@@ -351,6 +351,13 @@ def actionSearchMenu(params):
             query = _modalKeyboard(params.get('searchTitle', 'Search'))
 
         if query:
+            historyTypeIDs = {'series':'0', 'movies':'1', 'episodes':'2'}
+            previousHistory = ADDON.getSetting('searchHistory')
+            if previousHistory:                
+                ADDON.setSetting('searchHistory', historyTypeIDs[params['searchType']] + query + '\n' + previousHistory)
+            else:
+                ADDON.setSetting('searchHistory', historyTypeIDs[params['searchType']] + query)
+            
             params['query'] = query
             params['section'] = 'ALL'
             actionCatalogSection(params) # Send the search type and query for the catalog functions to use.
@@ -398,10 +405,61 @@ def actionSearchMenu(params):
                 buildURL({'action': 'actionTraktMenu', 'path': 'trakt'}),
                 xbmcgui.ListItem('[COLOR lavender][B]Search by Trakt List[/B][/COLOR]'),
                 True
+            ),
+            (
+                buildURL({'action': 'actionSearchHistory', 'path': 'searchHistory'}),
+                xbmcgui.ListItem('[COLOR lavender][B]Search History...[/B][/COLOR]'),
+                True
             )
         )
     )
     xbmcplugin.endOfDirectory(PLUGIN_ID)
+    
+    
+# A sub menu, lists all previous searches along with their categories.
+def actionSearchHistory(params):
+    history = ADDON.getSetting('searchHistory').split('\n') # Non-UI setting, it's just a big string.
+    
+    # A blank string split creates a list with a blank string inside, so test if the first item is valid.
+    if history[0]:
+        # Use list indexes to map to 'searchType' and a label prefix.
+        historyTypeNames = ['series', 'movies', 'episodes']
+        historyPrefixes = ['(Cartoon/Anime)', '(Movie)', '(Episode)']
+        
+        searchPath = URL_PATHS['search']
+        
+        historyItems = tuple(
+            (
+                buildURL({
+                    'query': itemQuery,
+                    'searchType': historyTypeNames[itemType],
+                    'path': searchPath,                    
+                    'section': 'ALL',
+                    'action': 'actionCatalogSection'                    
+                }),
+                xbmcgui.ListItem('[B]%s[/B] "%s"' % (historyPrefixes[itemType], itemQuery)),
+                True
+            )
+            for itemType, itemQuery in (
+                (int(itemString[0]), itemString[1:]) for itemString in history
+            )
+        )
+        clearHistoryItem = (
+            buildURL({'action': 'actionSearchHistoryClear'}), xbmcgui.ListItem('[B]Clear History...[/B]'), False
+        )           
+        xbmcplugin.addDirectoryItems(PLUGIN_ID, (clearHistoryItem,) + historyItems)
+    else:
+        xbmcplugin.addDirectoryItem(PLUGIN_ID, '', xbmcgui.ListItem('(No History)'), isFolder=False)
+    xbmcplugin.endOfDirectory(PLUGIN_ID)
+    
+    
+def actionSearchHistoryClear(params):
+    dialog = xbmcgui.Dialog()
+    if dialog.yesno('Clear Search History', 'Are you sure?'):
+        ADDON.setSetting('searchHistory', '')
+        dialog.notification('Watchnixtoons2', 'Search history cleared', xbmcgui.NOTIFICATION_INFO, 3000, False)
+        # Show the search menu afterwards.
+        xbmc.executebuiltin('Container.Update(' + PLUGIN_URL + '?action=actionSearchMenu,replace)')
 
 
 # A sub menu, lists the genre categories in the genre search.
