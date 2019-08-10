@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="plugin.video.watchnixtoons2" name="WatchNixtoons2" version="0.3.2" provider-name="doko">
+<addon id="plugin.video.watchnixtoons2" name="WatchNixtoons2" version="0.3.4" provider-name="doko">
     <requires>
         <import addon="xbmc.python" version="2.20.0"/>
         <import addon="script.module.requests"/>
@@ -10,6 +10,12 @@
     <extension point="xbmc.addon.metadata">
         <news>
 [COLOR orange][B]WatchNixtoons2[/B][/COLOR] - Cartoons &amp; Anime
+[B]0.3.4:[/B]
+- Added a simple search history feature, see Search -> "Search History" menu.
+
+[B]0.3.3:[/B]
+- Fixed the Trakt "liked" list display.
+
 [B]0.3.2:[/B]
 - Fixed a fault in the stream getting logic.
 
@@ -19,9 +25,6 @@
 
 [B]0.3.0:[/B]
 - Fixed the multi-chapter context menu when using the "Clean Episode Titles" setting.
-
-[B]0.2.9:[/B]
-- Changed the multi-chapter support to be a context-menu, "Play Chapters", so now it's optional.
         </news>
         <description lang="en">
 Watch cartoons and anime from [COLOR orange][B]WatchCartoonOnline.io[/B][/COLOR].
