@@ -52,7 +52,7 @@ ADDON_ICON_DICT = {'icon': ADDON_ICON, 'thumb': ADDON_ICON, 'poster': ADDON_ICON
 ADDON_TRAKT_ICON = 'special://home/addons/plugin.video.watchnixtoons2/resources/traktIcon.png'
 
 # To let the source website know it's this plugin. Also used inside "makeLatestCatalog()" and "actionResolve()".
-WNT2_USER_AGENT = 'Mozilla/5.0 (compatible; WatchNixtoons2/0.3.2; ' \
+WNT2_USER_AGENT = 'Mozilla/5.0 (compatible; WatchNixtoons2/0.3.5; ' \
 '+https://github.com/doko-desuka/plugin.video.watchnixtoons2)'
 
 MEDIA_HEADERS = None # Initialized in 'actionResolve()'.
@@ -139,17 +139,22 @@ def actionCatalogMenu(params):
 def actionCatalogSection(params):
     catalog = getCatalogProperty(params)
     path = params['path']
-    # 'isSpecial' is a boolean flag indicating if the items are not episodes, but playable (movies, OVAs etc.).
-    isSpecial = path in {URL_PATHS['ova'], URL_PATHS['movies'], URL_PATHS['latest']} and path != URL_PATHS['popular']
-    searchType = params.get('searchType', None)
+    
+    # Set up a boolean indicating if the catalog items are already playable, instead of being folders
+    # with more items inside.
+    # This is true for the OVA, movies, latest-episodes, movie-search and episode-search catalogs.
+    # Items in these catalogs link to the video player pages already.
+    isSpecial = (
+        path in {URL_PATHS['ova'], URL_PATHS['movies'], URL_PATHS['latest']}
+        or params.get('searchType', 'series') != 'series' # not series = movies or episodes search
+    )
 
-    if searchType == 'series' or not isSpecial:
-        action = 'actionEpisodesMenu'
-        isFolder = True
-    else:
-        # Special case for the OVA, movie and episode-search catalogs, they link to the video player pages already.
+    if isSpecial:
         action = 'actionResolve'
         isFolder = False
+    else:
+        action = 'actionEpisodesMenu'
+        isFolder = True
 
     thumb = params.get('thumb', ADDON_ICON)
     if path != URL_PATHS['latest'] or not ADDON_LATEST_THUMBS:
@@ -160,7 +165,7 @@ def actionCatalogSection(params):
     # Persistent property with item metadata, used with the "Show Information" context menu.
     infoItems = getWindowProperty(PROPERTY_INFO_ITEMS) or { }
 
-    if ADDON.getSetting('cleanupEpisodes') == 'true' and searchType != 'episodes':
+    if 'query' not in params and ADDON.getSetting('cleanupEpisodes') == 'true':
         listItemFunc = makeListItemClean
     else:
         listItemFunc = makeListItem
@@ -222,7 +227,7 @@ def actionEpisodesMenu(params):
     xbmcplugin.setContent(PLUGIN_ID, 'episodes')
 
     # Memory-cache the last episode list, to help when the user goes back and forth while watching
-    # multiple episodes of the same show. This way only one web request is needed.
+    # multiple episodes of the same show. This way only one web request is needed for the same show.
     lastListURL = getRawWindowProperty(PROPERTY_EPISODE_LIST_URL)
     if lastListURL and lastListURL == params['url']:
         listData = getWindowProperty(PROPERTY_EPISODE_LIST_DATA)
@@ -353,13 +358,16 @@ def actionSearchMenu(params):
         if query:
             historyTypeIDs = {'series':'0', 'movies':'1', 'episodes':'2'}
             previousHistory = ADDON.getSetting('searchHistory')
-            if previousHistory:                
+            if previousHistory:
+                # Limit search history to 40 items.
+                if previousHistory.count('\n') == 40:
+                    previousHistory = previousHistory[:previousHistory.rfind('\n')] # Forget the oldest search result.
                 ADDON.setSetting('searchHistory', historyTypeIDs[params['searchType']] + query + '\n' + previousHistory)
             else:
                 ADDON.setSetting('searchHistory', historyTypeIDs[params['searchType']] + query)
             
             params['query'] = query
-            params['section'] = 'ALL'
+            params['section'] = 'ALL' # Force an uncategorized display (results are usually few).
             actionCatalogSection(params) # Send the search type and query for the catalog functions to use.
         return
 
@@ -511,9 +519,9 @@ def actionTraktList(params):
 
         def _traktListItemsGen():
             traktIconDict = {'icon': ADDON_TRAKT_ICON, 'thumb': ADDON_TRAKT_ICON, 'poster': ADDON_TRAKT_ICON}
-            for itemName, overview in sorted(instance.getListItems(params['listURL'], ADDON)):
+            for itemName, overview, searchType, query in sorted(instance.getListItems(params['listURL'], ADDON)):
                 item = xbmcgui.ListItem(itemName)
-                item.setInfo('video', {'title': itemName, 'plot': overview, 'mediatype': 'tvshow'})
+                item.setInfo('video', {'title': itemName, 'plot': overview})
                 item.setArt(traktIconDict)
                 yield (
                     # Trakt items will lead straight to a show name search.
@@ -521,8 +529,8 @@ def actionTraktList(params):
                         {
                             'action': 'actionCatalogMenu',
                             'path': URL_PATHS['search'],
-                            'query': itemName,
-                            'searchType': 'series',
+                            'query': query,
+                            'searchType': searchType,
                         }
                     ),
                     item,
@@ -623,6 +631,8 @@ def actionShowInfo(params):
     oldParams = dict(parse_qsl(params['oldParams']))
     if plot or thumb:
         infoItems = getWindowProperty(PROPERTY_INFO_ITEMS) or { }
+        if thumb:
+            thumb += getThumbnailHeaders()
         infoItems[url] = (plot, (thumb or 'DefaultVideo.png'))
         setWindowProperty(PROPERTY_INFO_ITEMS, infoItems)
     xbmc.executebuiltin('Container.Update(' + PLUGIN_URL + '?' + params['oldParams'] + ',replace)')
@@ -804,7 +814,7 @@ def makeListItemClean(title, url, artDict, plot, isFolder, isSpecial, oldParams)
 '''
 
 # Manually sorts items from an iterable into an alphabetised catalog.
-# Iterable contains (a.string, a['href']) pairs that might refer to a series, episode, ova or movie.
+# Iterable contains (URL, name) pairs that might refer to a series, episode, ova or movie.
 def catalogFromIterable(iterable):
     catalog = {key: [ ] for key in ascii_uppercase}
     miscSection = catalog['#'] = [ ]
@@ -826,20 +836,8 @@ def makeLatestCatalog(params):
     if dataStartIndex == -1:
         raise Exception('Latest catalog scrape fail')
 
-    # Thumbnail User-Agent header for Kodi to use. Since it's a constant value, it can be precomputed:
-    thumbHeaders = '|User-Agent=Mozilla%2F5.0+%28compatible%3B+WatchNixtoons2%2F0.2.6%3B' \
-    '+%2Bhttps%3A%2F%2Fgithub.com%2Fdoko-desuka%2Fplugin.video.watchnixtoons2%29' \
-    '&Accept=image%2Fwebp%2C%2A%2F%2A&Referer=https%3A%2F%2Fm.watchcartoononline.io%2F'
-    # Original code:
-    #thumbHeaders = (
-    #    '|User-Agent='+quote_plus(WNT2_USER_AGENT)
-    #    + '&Accept='+quote_plus('image/webp,*/*')
-    #    + '&Referer='+quote_plus(BASEURL_MOBILE+'/')
-    #)
-    cookieProperty = getRawWindowProperty(PROPERTY_SESSION_COOKIE)
-    if cookieProperty:
-        thumbHeaders += '&Cookie=' + cookieProperty.replace('\n', '; ')
-
+    thumbHeaders = getThumbnailHeaders()
+        
     if ADDON_LATEST_DATE:
         # Make the catalog dict only have a single section, "LATEST", with items listed as they are.
         # This will cause "actionCatalogMenu" to show this single section directly, with no alphabet categories.
@@ -926,10 +924,11 @@ def makeEpisodesSearchCatalog(params):
     if dataStartIndex == -1:
         raise Exception('Episode search scrape fail: ' + params['query'])
 
+    
     return catalogFromIterable(
         match.groups()
         for match in re.finditer(
-            '''<a.*?"(.*?)".*?>(.*?)</''',
+            '''<a.*?href="(.*?)".*?>(.*?)</''',
             html[dataStartIndex : html.find('cizgiyazisi')],
             re.DOTALL
         )
@@ -976,7 +975,8 @@ def getCatalogProperty(params):
         catalog = func(params)
         setWindowProperty(PROPERTY_CATALOG, catalog)
         if 'query' in params:
-            # For searches, store the query and search type in the catalog path.
+            # For searches, store the query and search type in the catalog path so we can identify
+            # this particular search attempt.
             setRawWindowProperty(PROPERTY_CATALOG_PATH, path + params['query'] + params['searchType'])
         else:
             setRawWindowProperty(PROPERTY_CATALOG_PATH, path)
@@ -1003,7 +1003,9 @@ def getCatalogProperty(params):
 def actionResolve(params):
     # Needs to be the BASEURL domain to get multiple video qualities.
     url = params['url']
-    r = requestHelper(url if url.startswith('http') else BASEURL + url)
+    # Sanitize the URL since on some occasions it's a path instead of full address.
+    url = url if url.startswith('http') else (BASEURL + (url if url.startswith('/') else '/' + url))
+    r = requestHelper(url)
     content = r.content
 
     def _decodeSource(content, startIndex):
@@ -1020,7 +1022,7 @@ def actionResolve(params):
     # On rare cases an episode might have several "chapters", which are video players on the page.
     embedURLPattern = b'<meta itemprop="embedURL'
     embedURLIndex = content.find(embedURLPattern)
-    if 'playChapters' in params and content.find(embedURLPattern, embedURLIndex + 24) != -1: # 24 = len(embedURLPattern).
+    if 'playChapters' in params or ADDON.getSetting('chapterEpisodes') == 'true':
         # Multi-chapter episode found (or, multiple "embedURL" statements found).
         # Extract all chapters from the page.
         currentPlayerIndex = embedURLIndex
@@ -1029,10 +1031,14 @@ def actionResolve(params):
             dataIndices.append(currentPlayerIndex)
             currentPlayerIndex = content.find(embedURLPattern, currentPlayerIndex + 24)
 
-        # Make a selection dialog with the chapters.
-        selectedIndex = xbmcgui.Dialog().select(
-            'Select Chapter', ['Chapter '+str(n) for n in xrange(1, len(dataIndices)+1)]
-        )
+        # If more than one "embedURL" statement found, make a selection dialog and call them "chapters".
+        if len(dataIndices) > 1:
+            selectedIndex = xbmcgui.Dialog().select(
+                'Select Chapter', ['Chapter '+str(n) for n in xrange(1, len(dataIndices)+1)]
+            )
+        else:
+            selectedIndex = 0
+        
         if selectedIndex != -1:
             embedURL = _decodeSource(content, dataIndices[selectedIndex])
         else:
@@ -1182,6 +1188,24 @@ def simpleRequest(url, requestFunc, headers):
     return requestFunc(url, headers=headers, verify=False, timeout=10)
 
 
+# Thumbnail HTTP headers for Kodi to use when grabbing thumbnail images.    
+def getThumbnailHeaders():    
+    # Original code:
+    #return (
+    #    '|User-Agent='+quote_plus(WNT2_USER_AGENT)
+    #    + '&Accept='+quote_plus('image/webp,*/*')
+    #    + '&Referer='+quote_plus(BASEURL_MOBILE+'/')
+    #)    
+    cookieProperty = getRawWindowProperty(PROPERTY_SESSION_COOKIE)
+    cookies = ('&Cookie=' + quote_plus(cookieProperty)) if cookieProperty else ''
+    
+    # Since it's a constant value, it can be precomputed.        
+    return '|User-Agent=Mozilla%2F5.0+%28compatible%3B+WatchNixtoons2%2F0.3.5%3B' \
+    '+%2Bhttps%3A%2F%2Fgithub.com%2Fdoko-desuka%2Fplugin.video.watchnixtoons2%29' \
+    '&Accept=image%2Fwebp%2C%2A%2F%2A&Referer=https%3A%2F%2Fm.watchcartoononline.io%2F' + cookies
+
+    
+
 def solveMediaRedirect(url, headers):
     # Use HEAD requests to fulfill possible 302 redirections.
     # Return the final stream HEAD response.
@@ -1213,7 +1237,7 @@ def requestHelper(url, data=None, extraHeaders=None):
     # At the moment it's a single response cookie, "__cfduid". Other cookies are set w/ Javascript by ads.
     cookieProperty = getRawWindowProperty(PROPERTY_SESSION_COOKIE)
     if cookieProperty:
-        cookieDict = dict(pair.split('=') for pair in cookieProperty.split('\n'))
+        cookieDict = dict(pair.split('=') for pair in cookieProperty.split('; '))
     else:
         cookieDict = None
 
@@ -1227,7 +1251,7 @@ def requestHelper(url, data=None, extraHeaders=None):
     # Store the session cookie(s), if any.
     if not cookieProperty and response.cookies:
         setRawWindowProperty(
-            PROPERTY_SESSION_COOKIE, '\n'.join(pair[0]+'='+pair[1] for pair in response.cookies.get_dict().iteritems())
+            PROPERTY_SESSION_COOKIE, '; '.join(pair[0]+'='+pair[1] for pair in response.cookies.get_dict().iteritems())
         )
 
     elapsed = time() - startTime

@@ -10,6 +10,7 @@
         <setting type="lsep" label="Episodes:"/>
         <setting id="reverseEpisodes" label="Reverse Episode List Order" type="bool" default="false"/>
         <setting id="cleanupEpisodes" label="Clean Episode Titles" type="bool" default="false"/>
+        <setting id="chapterEpisodes" label="Always Show Multi-chapter Dialog" type="bool" default="false"/>
         <setting type="sep"/>
         <setting type="lsep" label="View Mode:"/>
         <setting id="useViewMode" label="Force View Mode" type="bool" default="false"/>

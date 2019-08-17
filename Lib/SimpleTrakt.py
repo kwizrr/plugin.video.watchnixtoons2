@@ -87,12 +87,31 @@ class SimpleTrakt():
 
 
     def getListItems(self, listURL, addon):
-        r = self._traktRequest(listURL + '/items/movie,show?extended=full', data=None, addon=addon)
+        # This query ignores 'person' type objects, like actors.
+        r = self._traktRequest(listURL + '/items/movie,show,season,episode?extended=full', data=None, addon=addon)
+        
+        def _preprocessItemsGen(iterable):
+            searchTypes = {'movie': 'movies', 'show': 'series', 'season': 'series', 'episode': 'series'}
+            for item in iterable:
+                itemType = item['type']
+                itemProps = item[itemType]
+                
+                if itemType == 'season':
+                    # Since we can't point to a specific season, point to the show instead.
+                    label = itemProps['title'] + ' (' + item['show']['title'] + ')'
+                    query = item['show']['title']
+                    overview = itemProps['overview'] if itemProps['overview'] else item['show']['overview']
+                elif itemType == 'episode':
+                    label = itemProps['title'] + ' (Season %i) (%s)' % (itemProps['season'], item['show']['title'])
+                    query = item['show']['title']
+                    overview = itemProps['overview']
+                else:
+                    query = label = itemProps['title']
+                    overview = itemProps['overview']
+                yield label, overview, searchTypes[itemType], query
+        
         if r.ok:
-            return set(
-                (item[item['type']]['title'], item[item['type']]['overview'])
-                for item in r.json()
-            )
+            return _preprocessItemsGen(r.json())
         else:
             return ()
 
