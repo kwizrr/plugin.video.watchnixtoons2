@@ -27,8 +27,8 @@ requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 PLUGIN_ID = int(sys.argv[1])
 PLUGIN_URL = sys.argv[0]
 
-BASEURL = 'https://www.watchcartoononline.io'
-BASEURL_MOBILE = 'https://m.watchcartoononline.io'
+BASEURL = 'https://www.wcostream.com'
+BASEURL_MOBILE = 'https://m.wcostream.com'
 
 PROPERTY_CATALOG_PATH = 'wnt2.catalogPath'
 PROPERTY_CATALOG = 'wnt2.catalog'
@@ -52,7 +52,7 @@ ADDON_ICON_DICT = {'icon': ADDON_ICON, 'thumb': ADDON_ICON, 'poster': ADDON_ICON
 ADDON_TRAKT_ICON = 'special://home/addons/plugin.video.watchnixtoons2/resources/traktIcon.png'
 
 # To let the source website know it's this plugin. Also used inside "makeLatestCatalog()" and "actionResolve()".
-WNT2_USER_AGENT = 'Mozilla/5.0 (compatible; WatchNixtoons2/0.3.5; ' \
+WNT2_USER_AGENT = 'Mozilla/5.0 (compatible; WatchNixtoons2/0.3.6; ' \
 '+https://github.com/doko-desuka/plugin.video.watchnixtoons2)'
 
 MEDIA_HEADERS = None # Initialized in 'actionResolve()'.
@@ -1200,9 +1200,9 @@ def getThumbnailHeaders():
     cookies = ('&Cookie=' + quote_plus(cookieProperty)) if cookieProperty else ''
     
     # Since it's a constant value, it can be precomputed.        
-    return '|User-Agent=Mozilla%2F5.0+%28compatible%3B+WatchNixtoons2%2F0.3.5%3B' \
+    return '|User-Agent=Mozilla%2F5.0+%28compatible%3B+WatchNixtoons2%2F0.3.6%3B' \
     '+%2Bhttps%3A%2F%2Fgithub.com%2Fdoko-desuka%2Fplugin.video.watchnixtoons2%29' \
-    '&Accept=image%2Fwebp%2C%2A%2F%2A&Referer=https%3A%2F%2Fm.watchcartoononline.io%2F' + cookies
+    '&Accept=image%2Fwebp%2C%2A%2F%2A&Referer=https%3A%2F%2Fm.wcostream.com%2F' + cookies
 
     
 

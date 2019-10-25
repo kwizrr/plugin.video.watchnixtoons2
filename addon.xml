@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="plugin.video.watchnixtoons2" name="WatchNixtoons2" version="0.3.5" provider-name="doko">
+<addon id="plugin.video.watchnixtoons2" name="WatchNixtoons2" version="0.3.6" provider-name="doko">
     <requires>
         <import addon="xbmc.python" version="2.20.0"/>
         <import addon="script.module.requests"/>
@@ -10,6 +10,9 @@
     <extension point="xbmc.addon.metadata">
         <news>
 [COLOR orange][B]WatchNixtoons2[/B][/COLOR] - Cartoons &amp; Anime
+[B]0.3.6:[/B]
+- Updated the URL to the website, after a domain change.
+
 [B]0.3.5:[/B]
 - Fixed the Episode and Movie searches, the results are now playable.
 - Added the "Always Show Multi-chapter Dialog" setting, for use w/ shows that split episodes in parts.
