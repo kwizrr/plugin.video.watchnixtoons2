@@ -52,7 +52,7 @@ ADDON_ICON_DICT = {'icon': ADDON_ICON, 'thumb': ADDON_ICON, 'poster': ADDON_ICON
 ADDON_TRAKT_ICON = 'special://home/addons/plugin.video.watchnixtoons2/resources/traktIcon.png'
 
 # To let the source website know it's this plugin. Also used inside "makeLatestCatalog()" and "actionResolve()".
-WNT2_USER_AGENT = 'Mozilla/5.0 (compatible; WatchNixtoons2/0.3.6; ' \
+WNT2_USER_AGENT = 'Mozilla/5.0 (compatible; WatchNixtoons2/0.3.7; ' \
 '+https://github.com/doko-desuka/plugin.video.watchnixtoons2)'
 
 MEDIA_HEADERS = None # Initialized in 'actionResolve()'.
@@ -585,17 +585,15 @@ def actionShowInfo(params):
 
     # Get the desktop page for the item, whatever it is.
     url = params['url']
-    r = requestHelper(
-        url.replace('m.', 'www.', 1) if url.startswith('http') else BASEURL + url
-    )
+    r = requestHelper(url.replace('https://m.', 'https://www.', 1) if url.startswith('http') else BASEURL + url)
     html = r.text
 
-    thumb = ''
     stringStartIndex = html.find('og:image" content="')
-    if stringStartIndex == -1:
-        xbmc.log('WatchNixtoons2 > Could not find thumbnail metadata (' + url + ')', xbmc.LOGWARNING)
+    if stringStartIndex != -1:
+        thumb = BASEURL + html[stringStartIndex+19 : html.find('"', stringStartIndex+19)] # 19 = len('og:image" content="')
     else:
-        thumb = html[stringStartIndex+19 : html.find('"', stringStartIndex+19)] # +19 is the length of 'og:image" content="'
+        thumb = ''
+        xbmc.log('WatchNixtoons2 > Could not find thumbnail metadata (' + url + ')', xbmc.LOGWARNING)
 
     # We don't know if it's a show page (which has a list of episodes) or movie/OVA/episode page (which
     # has the video player element). Find out what it is.
@@ -1200,7 +1198,7 @@ def getThumbnailHeaders():
     cookies = ('&Cookie=' + quote_plus(cookieProperty)) if cookieProperty else ''
     
     # Since it's a constant value, it can be precomputed.        
-    return '|User-Agent=Mozilla%2F5.0+%28compatible%3B+WatchNixtoons2%2F0.3.6%3B' \
+    return '|User-Agent=Mozilla%2F5.0+%28compatible%3B+WatchNixtoons2%2F0.3.7%3B' \
     '+%2Bhttps%3A%2F%2Fgithub.com%2Fdoko-desuka%2Fplugin.video.watchnixtoons2%29' \
     '&Accept=image%2Fwebp%2C%2A%2F%2A&Referer=https%3A%2F%2Fm.wcostream.com%2F' + cookies
 
