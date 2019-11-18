@@ -38,8 +38,6 @@ PROPERTY_LATEST_MOVIES = 'wnt2.latestMovies'
 PROPERTY_INFO_ITEMS = 'wnt2.infoItems'
 PROPERTY_SESSION_COOKIE = 'wnt2.cookie'
 
-#HTML_UNESCAPE_FUNC = HTMLParser().unescape
-
 ADDON = xbmcaddon.Addon()
 # Show catalog: whether to show the catalog categories or to go straight to the "ALL" section with all items visible.
 ADDON_SHOW_CATALOG = ADDON.getSetting('showCatalog') == 'true'
@@ -232,7 +230,7 @@ def actionEpisodesMenu(params):
     if lastListURL and lastListURL == params['url']:
         listData = getWindowProperty(PROPERTY_EPISODE_LIST_DATA)
     else:
-        url = params['url']
+        url = params['url'].replace('watchcartoononline.io', 'wcostream.com', 1) # New domain safety replace.
         # Always get episodes from the mobile version of the show page.
         r = requestHelper(
             url.replace('/www.', '/m.', 1) if url.startswith('http') else BASEURL_MOBILE + url
@@ -1003,7 +1001,7 @@ def actionResolve(params):
     url = params['url']
     # Sanitize the URL since on some occasions it's a path instead of full address.
     url = url if url.startswith('http') else (BASEURL + (url if url.startswith('/') else '/' + url))
-    r = requestHelper(url)
+    r = requestHelper(url.replace('watchcartoononline.io', 'wcostream.com', 1)) # New domain safety replace.
     content = r.content
 
     def _decodeSource(content, startIndex):
