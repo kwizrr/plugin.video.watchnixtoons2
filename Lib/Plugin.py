@@ -28,6 +28,7 @@ PLUGIN_ID = int(sys.argv[1])
 PLUGIN_URL = sys.argv[0]
 
 BASEURL = 'https://www.wcostream.com'
+# Due to a recent bug on the server end, the mobile URL is now only used on 'makeLatestCatalog()'.
 BASEURL_MOBILE = 'https://m.wcostream.com'
 
 PROPERTY_CATALOG_PATH = 'wnt2.catalogPath'
@@ -55,12 +56,12 @@ WNT2_USER_AGENT = 'Mozilla/5.0 (compatible; WatchNixtoons2/0.3.7; ' \
 
 MEDIA_HEADERS = None # Initialized in 'actionResolve()'.
 
-# Url paths: paths to parts of the website, to be added to the BASEURL / BASEURL_MOBILE urls.
+# Url paths: paths to parts of the website, to be added to the BASEURL url.
 # Also used to tell what kind of catalog is loaded in memory.
 # In case they change in the future it'll be easier to modify in here.
 URL_PATHS = {
     'latest': 'latest', # No path used, 'makeLatestCatalog()' is hardcoded to use the homepage of the mobile website.
-    'popular': '/ongoing-series',
+    'popular': '/contact', # We use the contact page for its small size, we're only interested in the sidebar content.
     'dubbed': '/dubbed-anime-list',
     'cartoons': '/cartoon-list',
     'subbed': '/subbed-anime-list',
@@ -137,7 +138,7 @@ def actionCatalogMenu(params):
 def actionCatalogSection(params):
     catalog = getCatalogProperty(params)
     path = params['path']
-    
+
     # Set up a boolean indicating if the catalog items are already playable, instead of being folders
     # with more items inside.
     # This is true for the OVA, movies, latest-episodes, movie-search and episode-search catalogs.
@@ -231,24 +232,28 @@ def actionEpisodesMenu(params):
         listData = getWindowProperty(PROPERTY_EPISODE_LIST_DATA)
     else:
         url = params['url'].replace('watchcartoononline.io', 'wcostream.com', 1) # New domain safety replace.
-        # Always get episodes from the mobile version of the show page.
-        r = requestHelper(
-            url.replace('/www.', '/m.', 1) if url.startswith('http') else BASEURL_MOBILE + url
-        )
+        r = requestHelper(url if url.startswith('http') else BASEURL + url)
         html = r.text
 
-        # Try to scrape thumb and plot metadata from the show page.
-        dataStartIndex = html.find('category_description')
-        if dataStartIndex == -1:
-            raise Exception('Episode description scrape fail: ' + url)
+        # Code similar to 'actionShowInfo()'. Try to scrape thumb and plot metadata from the (desktop) show page.
+        dataStartIndex = html.find('cat-img-desc')
+        
+        stringStartIndex = html.find('og:image" content="')
+        if stringStartIndex != -1:
+            # 19 = len('og:image" content="')
+            thumb = BASEURL + html[stringStartIndex+19 : html.find('"', stringStartIndex+19)] + getThumbnailHeaders()
         else:
-            htmlSlice = html[dataStartIndex : html.find('/p>', dataStartIndex)]
-            thumb = re.search('''<img.*?src.*?"(.*?)"''', htmlSlice)
-            thumb = thumb.group(1) if thumb else ''
-            plot = re.search('''<p>(.*?)<''', htmlSlice, re.DOTALL)
-            plot = plot.group(1) if plot else ''
+            thumb = ''
 
-        dataStartIndex = html.find('ui-listview-z', dataStartIndex)
+        match = re.search('iltext">\s*<p>(.*?)</p>', html, re.DOTALL)
+        if match:
+            plot = unescapeHTMLText(
+                match.group(1).replace('<p>', '').replace('</p>', '\n').replace('<br />', '\n').strip()
+            )
+        else:
+            plot = ''
+
+        dataStartIndex = html.find('catlist-listview')
         if dataStartIndex == -1:
             raise Exception('Episode list scrape fail: ' + url)
 
@@ -258,7 +263,9 @@ def actionEpisodesMenu(params):
             plot,
             tuple(
                 match.groups()
-                for match in re.finditer('''<a.*?"(.*?)".*?>(.*?)</''', html[dataStartIndex : html.rfind('button')])
+                for match in re.finditer(
+                    '''<a.*?"(.*?)".*?>(.*?)</''', html[dataStartIndex : html.find('CAT List FINISH')]
+                )
             )
         )
         setRawWindowProperty(PROPERTY_EPISODE_LIST_URL, params['url'])
@@ -293,7 +300,7 @@ def actionLatestMoviesMenu(params):
     # Since this page is very large (130 KB), we memory cache it after it's been requested.
     html = getRawWindowProperty(PROPERTY_LATEST_MOVIES)
     if not html:
-        r = requestHelper(BASEURL + params['path']) # Path unused, data is already on the homepage.
+        r = requestHelper(BASEURL + params['path'])
         html = r.text
         setRawWindowProperty(PROPERTY_LATEST_MOVIES, html)
 
@@ -363,7 +370,7 @@ def actionSearchMenu(params):
                 ADDON.setSetting('searchHistory', historyTypeIDs[params['searchType']] + query + '\n' + previousHistory)
             else:
                 ADDON.setSetting('searchHistory', historyTypeIDs[params['searchType']] + query)
-            
+
             params['query'] = query
             params['section'] = 'ALL' # Force an uncategorized display (results are usually few).
             actionCatalogSection(params) # Send the search type and query for the catalog functions to use.
@@ -420,28 +427,28 @@ def actionSearchMenu(params):
         )
     )
     xbmcplugin.endOfDirectory(PLUGIN_ID)
-    
-    
+
+
 # A sub menu, lists all previous searches along with their categories.
 def actionSearchHistory(params):
     history = ADDON.getSetting('searchHistory').split('\n') # Non-UI setting, it's just a big string.
-    
+
     # A blank string split creates a list with a blank string inside, so test if the first item is valid.
     if history[0]:
         # Use list indexes to map to 'searchType' and a label prefix.
         historyTypeNames = ['series', 'movies', 'episodes']
         historyPrefixes = ['(Cartoon/Anime)', '(Movie)', '(Episode)']
-        
+
         searchPath = URL_PATHS['search']
-        
+
         historyItems = tuple(
             (
                 buildURL({
                     'query': itemQuery,
                     'searchType': historyTypeNames[itemType],
-                    'path': searchPath,                    
+                    'path': searchPath,
                     'section': 'ALL',
-                    'action': 'actionCatalogSection'                    
+                    'action': 'actionCatalogSection'
                 }),
                 xbmcgui.ListItem('[B]%s[/B] "%s"' % (historyPrefixes[itemType], itemQuery)),
                 True
@@ -452,13 +459,13 @@ def actionSearchHistory(params):
         )
         clearHistoryItem = (
             buildURL({'action': 'actionSearchHistoryClear'}), xbmcgui.ListItem('[B]Clear History...[/B]'), False
-        )           
+        )
         xbmcplugin.addDirectoryItems(PLUGIN_ID, (clearHistoryItem,) + historyItems)
     else:
         xbmcplugin.addDirectoryItem(PLUGIN_ID, '', xbmcgui.ListItem('(No History)'), isFolder=False)
     xbmcplugin.endOfDirectory(PLUGIN_ID)
-    
-    
+
+
 def actionSearchHistoryClear(params):
     dialog = xbmcgui.Dialog()
     if dialog.yesno('Clear Search History', 'Are you sure?'):
@@ -470,10 +477,10 @@ def actionSearchHistoryClear(params):
 
 # A sub menu, lists the genre categories in the genre search.
 def actionGenresMenu(params):
-    r = requestHelper(BASEURL_MOBILE + URL_PATHS['genre'])
+    r = requestHelper(BASEURL + URL_PATHS['genre'])
     html = r.text
 
-    dataStartIndex = html.find('ui-listview-z')
+    dataStartIndex = html.find(r'ddmcc">')
     if dataStartIndex == -1:
         raise Exception('Genres list scrape fail')
 
@@ -481,11 +488,17 @@ def actionGenresMenu(params):
         PLUGIN_ID,
         tuple(
             (
-                buildURL({'action': 'actionCatalogMenu', 'path': match.group(1), 'searchType': 'genres'}),
+                buildURL(
+                    {
+                        'action': 'actionCatalogMenu',
+                        'path': '/search-by-genre/' + match.group(1).rsplit('/', 1)[1],
+                        'searchType': 'genres'
+                    }
+                ),
                 xbmcgui.ListItem(match.group(2)),
                 True
             )
-            for match in re.finditer('''<a.*?"(.*?)".*?>(.*?)</''', html[dataStartIndex : html.rfind('button')])
+            for match in re.finditer('''<a.*?"([^"]+).*?>(.*?)</''', html[dataStartIndex : html.find(r'</div></div>')])
         )
     )
     xbmcplugin.endOfDirectory(PLUGIN_ID)
@@ -582,8 +595,8 @@ def actionShowInfo(params):
     xbmcgui.Dialog().notification('Watchnixtoons2', 'Requesting info...', ADDON_ICON, 2000, False)
 
     # Get the desktop page for the item, whatever it is.
-    url = params['url']
-    r = requestHelper(url.replace('https://m.', 'https://www.', 1) if url.startswith('http') else BASEURL + url)
+    url = params['url'].replace('/m.', '/www.', 1) # Make sure the URL points to the desktop site.
+    r = requestHelper(url if url.startswith('http') else BASEURL + url)
     html = r.text
 
     stringStartIndex = html.find('og:image" content="')
@@ -833,13 +846,13 @@ def makeLatestCatalog(params):
         raise Exception('Latest catalog scrape fail')
 
     thumbHeaders = getThumbnailHeaders()
-        
+
     if ADDON_LATEST_DATE:
         # Make the catalog dict only have a single section, "LATEST", with items listed as they are.
-        # This will cause "actionCatalogMenu" to show this single section directly, with no alphabet categories.
+        # This way the actionCatalogMenu() function will show this single section directly, with no alphabet categories.
         return {
             'LATEST': tuple(
-                (match.group(1), match.group(3), match.group(2)+thumbHeaders)
+                (match.group(1), match.group(3), BASEURL + match.group(2) + thumbHeaders)
                 for match in re.finditer(
                     '''<a.*?"(.*?)".*?img src="(.*?)".*?div.*?div>(.*?)</div''', html[dataStartIndex : html.find('/ol')]
                 )
@@ -847,7 +860,7 @@ def makeLatestCatalog(params):
         }
     else:
         return catalogFromIterable(
-            (match.group(1), match.group(3), match.group(2)+thumbHeaders)
+            (match.group(1), match.group(3), BASEURL + match.group(2) + thumbHeaders)
             for match in re.finditer(
                 '''<a.*?"(.*?)".*?img src="(.*?)".*?div.*?div>(.*?)</div''', html[dataStartIndex : html.find('/ol')]
             )
@@ -855,18 +868,17 @@ def makeLatestCatalog(params):
 
 
 def makePopularCatalog(params):
-    # The "Popular & Ongoing" page of the mobile version is more complete.
-    r = requestHelper(BASEURL_MOBILE + params['path'])
+    r = requestHelper(BASEURL + params['path'])
     html = r.text
 
-    dataStartIndex = html.find('ui-listview-z')
+    dataStartIndex = html.find('menustyle')
     if dataStartIndex == -1:
         raise Exception('Popular catalog scrape fail: ' + params['path'])
 
     return catalogFromIterable(
-        match.groups()
+        (match.group(1), match.group(2).strip())
         for match in re.finditer(
-            '''<a.*?href="(.*?)".*?>(.*?)</''', html[dataStartIndex : html.rfind('button')]
+            '''<a.*?href="([^"]+).*?>(.*?)</''', html[dataStartIndex : html.find('</li></ul>')]
         )
     )
 
@@ -920,7 +932,7 @@ def makeEpisodesSearchCatalog(params):
     if dataStartIndex == -1:
         raise Exception('Episode search scrape fail: ' + params['query'])
 
-    
+
     return catalogFromIterable(
         match.groups()
         for match in re.finditer(
@@ -1034,7 +1046,7 @@ def actionResolve(params):
             )
         else:
             selectedIndex = 0
-        
+
         if selectedIndex != -1:
             embedURL = _decodeSource(content, dataIndices[selectedIndex])
         else:
@@ -1184,23 +1196,23 @@ def simpleRequest(url, requestFunc, headers):
     return requestFunc(url, headers=headers, verify=False, timeout=10)
 
 
-# Thumbnail HTTP headers for Kodi to use when grabbing thumbnail images.    
-def getThumbnailHeaders():    
+# Thumbnail HTTP headers for Kodi to use when grabbing thumbnail images.
+def getThumbnailHeaders():
     # Original code:
     #return (
     #    '|User-Agent='+quote_plus(WNT2_USER_AGENT)
     #    + '&Accept='+quote_plus('image/webp,*/*')
-    #    + '&Referer='+quote_plus(BASEURL_MOBILE+'/')
-    #)    
+    #    + '&Referer='+quote_plus(BASEURL+'/')
+    #)
     cookieProperty = getRawWindowProperty(PROPERTY_SESSION_COOKIE)
     cookies = ('&Cookie=' + quote_plus(cookieProperty)) if cookieProperty else ''
-    
-    # Since it's a constant value, it can be precomputed.        
-    return '|User-Agent=Mozilla%2F5.0+%28compatible%3B+WatchNixtoons2%2F0.3.7%3B' \
-    '+%2Bhttps%3A%2F%2Fgithub.com%2Fdoko-desuka%2Fplugin.video.watchnixtoons2%29' \
-    '&Accept=image%2Fwebp%2C%2A%2F%2A&Referer=https%3A%2F%2Fm.wcostream.com%2F' + cookies
 
-    
+    # Since it's a constant value, it can be precomputed.
+    return '|User-Agent=Mozilla%2F5.0+%28compatible%3B+WatchNixtoons2%2F0.3.8%3B' \
+    '+%2Bhttps%3A%2F%2Fgithub.com%2Fdoko-desuka%2Fplugin.video.watchnixtoons2%29' \
+    '&Accept=image%2Fwebp%2C%2A%2F%2A&Referer=https%3A%2F%2Fwww.wcostream.com%2F' + cookies
+
+
 
 def solveMediaRedirect(url, headers):
     # Use HEAD requests to fulfill possible 302 redirections.
