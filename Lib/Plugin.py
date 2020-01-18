@@ -671,7 +671,18 @@ def getTitleInfo(unescapedTitle):
     seasonIndex = unescapedTitle.find('Season ') # 7 characters long.
     if seasonIndex != -1:
         season = unescapedTitle[seasonIndex+7 : unescapedTitle.find(' ', seasonIndex+7)]
-        showTitle = unescapedTitle[:seasonIndex].strip()
+        if not season.isdigit():
+            # Handle inconsistently formatted episode title, with possibly ordinal season before or after
+            # the word "Season" (case unknown, inconsistent).
+            if season == 'Episode':
+                # Find the word to the left of "Season ", separated by spaces (spaces not included in the result).
+                season = unescapedTitle[unescapedTitle.rfind(' ', 0, seasonIndex-1) + 1 : seasonIndex-1]
+                showTitle = unescapedTitle[:seasonIndex+7].strip(' -:') # Include the "nth Season" term in the title.
+            else:
+                showTitle = unescapedTitle[:seasonIndex].strip(' -:')
+            season = {'second': '2', 'third': '3', 'fourth': '4', 'fifth': '5'}.get(season.lower(), '')
+        else:
+            showTitle = unescapedTitle[:seasonIndex].strip(' -:')
 
     episodeIndex = unescapedTitle.find(' Episode ') # 9 characters long.
     if episodeIndex != -1:
@@ -691,13 +702,13 @@ def getTitleInfo(unescapedTitle):
                 season = '1'
 
     if episode:
-        return (showTitle[:episodeIndex], season, episode, multiPart, episodeTitle.strip(' /'))
+        return (showTitle[:episodeIndex].strip(' -'), season, episode, multiPart, episodeTitle.strip(' /'))
     else:
         englishIndex = unescapedTitle.rfind(' English')
         if englishIndex != -1:
-            return (unescapedTitle[:englishIndex], None, None, None, '')
+            return (unescapedTitle[:englishIndex].strip(' -'), None, None, None, '')
         else:
-            return (unescapedTitle, None, None, None, '')
+            return (unescapedTitle.strip(' -'), None, None, None, '')
 
 
 def makeListItem(title, url, artDict, plot, isFolder, isSpecial, oldParams):
@@ -1145,11 +1156,12 @@ def actionResolve(params):
         item.setMimeType(mediaHead.headers.get('Content-Type', 'video/mp4')) # Avoids Kodi's MIME request.
         episodeString = xbmc.getInfoLabel('ListItem.Episode')
         if episodeString != '' and episodeString != '-1':
+            seasonInfoLabel = xbmc.getInfoLabel('ListItem.Season')
             item.setInfo('video',
                 {
                     'tvshowtitle': xbmc.getInfoLabel('ListItem.TVShowTitle'),
                     'title': xbmc.getInfoLabel('ListItem.Title'),
-                    'season': int(xbmc.getInfoLabel('ListItem.Season')),
+                    'season': int(seasonInfoLabel) if seasonInfoLabel.isdigit() else -1,
                     'episode': int(episodeString),
                     'plot': xbmc.getInfoLabel('ListItem.Plot'),
                     'mediatype': 'episode'
