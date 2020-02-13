@@ -27,9 +27,10 @@ requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 PLUGIN_ID = int(sys.argv[1])
 PLUGIN_URL = sys.argv[0]
 
-BASEURL = 'https://www.wcostream.com'
-# Due to a recent bug on the server end, the mobile URL is now only used on 'makeLatestCatalog()'.
-BASEURL_MOBILE = 'https://m.wcostream.com'
+BASEURL = 'https://www.thewatchcartoononline.tv'
+# Due to a recent bug on the server end, the mobile URL is now only used on 'makeLatestCatalog()' (and even
+# then, when it fails, we fall back to the desktop site).
+BASEURL_MOBILE = 'https://m.wcostream.com' # Mobile version of one of their domains (seems to be the only one).
 
 PROPERTY_CATALOG_PATH = 'wnt2.catalogPath'
 PROPERTY_CATALOG = 'wnt2.catalog'
@@ -51,7 +52,7 @@ ADDON_ICON_DICT = {'icon': ADDON_ICON, 'thumb': ADDON_ICON, 'poster': ADDON_ICON
 ADDON_TRAKT_ICON = 'special://home/addons/plugin.video.watchnixtoons2/resources/traktIcon.png'
 
 # To let the source website know it's this plugin. Also used inside "makeLatestCatalog()" and "actionResolve()".
-WNT2_USER_AGENT = 'Mozilla/5.0 (compatible; WatchNixtoons2/0.3.7; ' \
+WNT2_USER_AGENT = 'Mozilla/5.0 (compatible; WatchNixtoons2/0.4.1; ' \
 '+https://github.com/doko-desuka/plugin.video.watchnixtoons2)'
 
 MEDIA_HEADERS = None # Initialized in 'actionResolve()'.
@@ -60,8 +61,8 @@ MEDIA_HEADERS = None # Initialized in 'actionResolve()'.
 # Also used to tell what kind of catalog is loaded in memory.
 # In case they change in the future it'll be easier to modify in here.
 URL_PATHS = {
-    'latest': 'latest', # No path used, 'makeLatestCatalog()' is hardcoded to use the homepage of the mobile website.
-    'popular': '/contact', # We use the contact page for its small size, we're only interested in the sidebar content.
+    'latest': 'latest', # No path used, 'makeLatestCatalog()' uses the homepage of the mobile website.
+    'popular': 'popular', # No path used, 'makePopularCatalog()' uses the hompage of the desktop website.
     'dubbed': '/dubbed-anime-list',
     'cartoons': '/cartoon-list',
     'subbed': '/subbed-anime-list',
@@ -231,29 +232,14 @@ def actionEpisodesMenu(params):
     if lastListURL and lastListURL == params['url']:
         listData = getWindowProperty(PROPERTY_EPISODE_LIST_DATA)
     else:
-        url = params['url'].replace('watchcartoononline.io', 'wcostream.com', 1) # New domain safety replace.
+        # New domain safety replace, in case the user is coming in from an old Kodi favorite item.
+        url = params['url'].replace('watchcartoononline.io', 'thewatchcartoononline.tv', 1)
         r = requestHelper(url if url.startswith('http') else BASEURL + url)
         html = r.text
-
-        # Code similar to 'actionShowInfo()'. Try to scrape thumb and plot metadata from the (desktop) show page.
-        dataStartIndex = html.find('cat-img-desc')
         
-        stringStartIndex = html.find('og:image" content="')
-        if stringStartIndex != -1:
-            # 19 = len('og:image" content="')
-            thumb = BASEURL + html[stringStartIndex+19 : html.find('"', stringStartIndex+19)] + getThumbnailHeaders()
-        else:
-            thumb = ''
+        plot, thumb = getPageMetadata(html)
 
-        match = re.search('iltext">\s*<p>(.*?)</p>', html, re.DOTALL)
-        if match:
-            plot = unescapeHTMLText(
-                match.group(1).replace('<p>', '').replace('</p>', '\n').replace('<br />', '\n').strip()
-            )
-        else:
-            plot = ''
-
-        dataStartIndex = html.find('catlist-listview')
+        dataStartIndex = html.find('"sidebar_right3"')
         if dataStartIndex == -1:
             raise Exception('Episode list scrape fail: ' + url)
 
@@ -264,7 +250,7 @@ def actionEpisodesMenu(params):
             tuple(
                 match.groups()
                 for match in re.finditer(
-                    '''<a.*?"(.*?)".*?>(.*?)</''', html[dataStartIndex : html.find('CAT List FINISH')]
+                    '''<a href="([^"]+).*?>([^<]+)''', html[dataStartIndex : html.find('"sidebar-all"')]
                 )
             )
         )
@@ -303,10 +289,12 @@ def actionLatestMoviesMenu(params):
         r = requestHelper(BASEURL + params['path'])
         html = r.text
         setRawWindowProperty(PROPERTY_LATEST_MOVIES, html)
-
-    dataStartIndex = html.find('catlist-listview')
+    
+    # Similar scraping logic to 'actionEpisodesMenu()'.
+    
+    dataStartIndex = html.find('"sidebar_right3"')
     if dataStartIndex == -1:
-        raise Exception('Latest movies scrape fail')
+        raise Exception('Latest movies scrape fail: ' + url)
 
     # Persistent property with item metadata.
     infoItems = getWindowProperty(PROPERTY_INFO_ITEMS) or { }
@@ -314,7 +302,7 @@ def actionLatestMoviesMenu(params):
     def _movieItemsGen():
         artDict = {'icon': ADDON_ICON, 'thumb': ADDON_ICON, 'poster': ADDON_ICON}
         reIter = re.finditer(
-            '''<a.*?href="(.*?)".*?>(.*?)</''', html[dataStartIndex : html.find('CAT List FINISH')], re.DOTALL
+            '''<a href="([^"]+).*?>([^<]+)''', html[dataStartIndex : html.find('"sidebar-all"')]
         )
         # The page has like 6000 items going back to 2010, so we limit to only the latest 200.
         for x in range(200):
@@ -324,20 +312,28 @@ def actionLatestMoviesMenu(params):
                 yield (
                     buildURL({'action': 'actionResolve', 'url': entryURL}),
                     makeListItem(
-                        entryTitle,
+                        unescapeHTMLText(entryTitle),
                         entryURL,
                         {'icon': ADDON_ICON, 'thumb': entryThumb, 'poster': entryThumb},
                         entryPlot,
-                        isFolder=False,
-                        isSpecial=True,
-                        oldParams=None
+                        isFolder = False,
+                        isSpecial = True,
+                        oldParams = None
                     ),
                     False
                 )
             else:
                 yield (
                     buildURL({'action': 'actionResolve', 'url': entryURL}),
-                    makeListItem(entryTitle, entryURL, artDict, '', isFolder=False, isSpecial=True, oldParams=params),
+                    makeListItem(
+                        unescapeHTMLText(entryTitle),
+                        entryURL,
+                        artDict,
+                        '',
+                        isFolder = False,
+                        isSpecial = True,
+                        oldParams = params
+                    ),
                     False
                 )
     xbmcplugin.addDirectoryItems(PLUGIN_ID, tuple(_movieItemsGen()))
@@ -591,6 +587,37 @@ def actionShowSettings(params):
     ADDON_LATEST_THUMBS = ADDON.getSetting('showLatestThumbs') == 'true'
 
 
+def getPageMetadata(html):
+    # If we're on an episode or (old) movie page, see if there's a parent page with the actual metadata.
+    stringStartIndex = html.find('"header-tag"')
+    if stringStartIndex != -1:
+        parentURL = re.search('href="([^"]+)', html[stringStartIndex:]).group(1)
+        if '/anime/movies' not in parentURL:
+            r = requestHelper(parentURL if parentURL.startswith('http') else BASEURL + parentURL)
+            if r.ok:
+                html = r.text
+    
+    # Thumbnail scraping.
+    thumb = ''
+    stringStartIndex = html.find('og:image" content="')
+    if stringStartIndex != -1:
+        thumbPath = html[stringStartIndex+19 : html.find('"', stringStartIndex+19)] # 19 = len('og:image" content="')
+        if thumbPath:
+            if thumbPath.startswith('http'):
+                thumb = thumbPath + getThumbnailHeaders()
+            elif thumbPath.startswith('/'):
+                thumb = BASEURL + thumbPath + getThumbnailHeaders()
+    
+    # (Show) plot scraping.
+    plot = ''
+    stringStartIndex = html.find('Info:')
+    if stringStartIndex != -1:
+        match = re.search('</h3>\s*<p>(.*?)</p>', html[stringStartIndex:], re.DOTALL)
+        plot = unescapeHTMLText(match.group(1).strip()) if match else ''
+    
+    return plot, thumb
+    
+
 def actionShowInfo(params):
     xbmcgui.Dialog().notification('Watchnixtoons2', 'Requesting info...', ADDON_ICON, 2000, False)
 
@@ -598,53 +625,18 @@ def actionShowInfo(params):
     url = params['url'].replace('/m.', '/www.', 1) # Make sure the URL points to the desktop site.
     r = requestHelper(url if url.startswith('http') else BASEURL + url)
     html = r.text
-
-    stringStartIndex = html.find('og:image" content="')
-    if stringStartIndex != -1:
-        thumb = BASEURL + html[stringStartIndex+19 : html.find('"', stringStartIndex+19)] # 19 = len('og:image" content="')
-    else:
-        thumb = ''
-        xbmc.log('WatchNixtoons2 > Could not find thumbnail metadata (' + url + ')', xbmc.LOGWARNING)
-
-    # We don't know if it's a show page (which has a list of episodes) or movie/OVA/episode page (which
-    # has the video player element). Find out what it is.
-    plot = ''
-    if 'cat-img-desc' in html:
-        # It's a show page.
-        stringStartIndex = html.find('iltext">') + 8
-        if stringStartIndex != 7:
-            if html.find('</div', stringStartIndex) > 0: # Sometimes the description is empty.
-                match = re.search('p>(.*?)</p', html[stringStartIndex:], re.DOTALL)
-                if match:
-                    plot = unescapeHTMLText(
-                        match.group(1).replace('<p>', '').replace('</p>', '\n').replace('<br />', '\n').strip()
-                    )
-    else:
-        # Assume it's a video player page.
-        stringStartIndex = html.find('iltext"')
-        if stringStartIndex != 7:
-            match = re.search('/b>(.*?)<span', html[stringStartIndex:], re.DOTALL)
-            if match:
-                plot = unescapeHTMLText(
-                    match.group(1).replace('<p>', '').replace('</p>', '\n').replace('<br />', '\n').strip()
-                )
-
-    # Old way, using Kodi's info screen on a new ListItem:
-    #tempItem.setInfo(
-    #    'video', {'mediatype': 'video', 'tvshowtitle': title, 'title': title, 'plot': plot, 'description': plot}
-    #)
-    #xbmcgui.Dialog().info(tempItem)
-    #xbmcplugin.endOfDirectory(int(sys.argv[1]))
-
-    # New way, using a persistent property holding a dictionary, and refreshing the directory listing.
-    oldParams = dict(parse_qsl(params['oldParams']))
+    
+    plot, thumb = getPageMetadata(html)
+    
+    # Use a persistent memory property holding a dictionary, and refresh the directory listing.
     if plot or thumb:
         infoItems = getWindowProperty(PROPERTY_INFO_ITEMS) or { }
-        if thumb:
-            thumb += getThumbnailHeaders()
         infoItems[url] = (plot, (thumb or 'DefaultVideo.png'))
         setWindowProperty(PROPERTY_INFO_ITEMS, infoItems)
-    xbmc.executebuiltin('Container.Update(' + PLUGIN_URL + '?' + params['oldParams'] + ',replace)')
+        oldParams = dict(parse_qsl(params['oldParams']))
+        xbmc.executebuiltin('Container.Update(%s,replace)' % (PLUGIN_URL + '?' + params['oldParams']))
+    else:
+        xbmcgui.Dialog().notification('Watchnixtoons2', 'No info found', ADDON_ICON, 1500, False)
 
 
 def unescapeHTMLText(text):
@@ -677,26 +669,27 @@ def getTitleInfo(unescapedTitle):
             if season == 'Episode':
                 # Find the word to the left of "Season ", separated by spaces (spaces not included in the result).
                 season = unescapedTitle[unescapedTitle.rfind(' ', 0, seasonIndex-1) + 1 : seasonIndex-1]
-                showTitle = unescapedTitle[:seasonIndex+7].strip(' -:') # Include the "nth Season" term in the title.
+                showTitle = unescapedTitle[:seasonIndex+7].strip(' -–:') # Include the "nth Season" term in the title.
             else:
-                showTitle = unescapedTitle[:seasonIndex].strip(' -:')
+                showTitle = unescapedTitle[:seasonIndex].strip(' -–:')
             season = {'second': '2', 'third': '3', 'fourth': '4', 'fifth': '5'}.get(season.lower(), '')
         else:
-            showTitle = unescapedTitle[:seasonIndex].strip(' -:')
+            showTitle = unescapedTitle[:seasonIndex].strip(' -–:')
 
     episodeIndex = unescapedTitle.find(' Episode ') # 9 characters long.
     if episodeIndex != -1:
         spaceIndex = unescapedTitle.find(' ', episodeIndex+9)
         if spaceIndex > episodeIndex:
             episodeSplit = unescapedTitle[episodeIndex+9 : spaceIndex].split('-') # For multipart episodes, like "42-43".
-            episode = episodeSplit[0]
-            multiPart = episodeSplit[1] if len(episodeSplit) > 1 else None
+            episode = filter(str.isdigit, episodeSplit[0])
+            multiPart = filter(str.isdigit, episodeSplit[1]) if len(episodeSplit) > 1 else None
 
+            # Get the episode title string (stripped of spaces, hyphens and en-dashes).
             englishIndex = unescapedTitle.rfind(' English', spaceIndex)
             if englishIndex != -1:
-                episodeTitle = unescapedTitle[spaceIndex+1 : englishIndex]
+                episodeTitle = unescapedTitle[spaceIndex+1 : englishIndex].strip(' -–:')
             else:
-                episodeTitle = unescapedTitle[spaceIndex+1:]
+                episodeTitle = unescapedTitle[spaceIndex+1:].strip(' -–:')
             # Safeguard for when season 1 is ocasionally omitted in the title.
             if not season:
                 season = '1'
@@ -741,7 +734,7 @@ def makeListItem(title, url, artDict, plot, isFolder, isSpecial, oldParams):
     if oldParams:
         contextMenuList = [
             (
-                'Show Information',
+                'Nixtoons Information',
                 'RunPlugin('+PLUGIN_URL+'?action=actionShowInfo&url='+quote_plus(url)+'&oldParams='+quote_plus(urlencode(oldParams))+')'
             )
         ]
@@ -848,13 +841,13 @@ def catalogFromIterable(iterable):
 
 
 def makeLatestCatalog(params):
-    # Returns a list of links from the "Latest 50 Releases" area but for mobile.
+    # Returns a list of links from the "Latest 50 Releases" area, but from their mobile site as it has lots of items.
     r = requestHelper(BASEURL_MOBILE) # Path unused, data is already on the homepage.
     html = r.text
 
     dataStartIndex = html.find('vList')
     if dataStartIndex == -1:
-        raise Exception('Latest catalog scrape fail')
+        raise Exception('(Mobile) Latest catalog scrape fail')
 
     thumbHeaders = getThumbnailHeaders()
 
@@ -863,33 +856,33 @@ def makeLatestCatalog(params):
         # This way the actionCatalogMenu() function will show this single section directly, with no alphabet categories.
         return {
             'LATEST': tuple(
-                (match.group(1), match.group(3), BASEURL + match.group(2) + thumbHeaders)
+                (match.group(1), match.group(3), BASEURL_MOBILE + match.group(2) + thumbHeaders)
                 for match in re.finditer(
-                    '''<a.*?"(.*?)".*?img src="(.*?)".*?div.*?div>(.*?)</div''', html[dataStartIndex : html.find('/ol')]
+                    '''<a href="([^"]+).*?img src="([^"]+).*?div.*?div>(.*?)</div''', html[dataStartIndex : html.find('/ol')]
                 )
             )
         }
     else:
         return catalogFromIterable(
-            (match.group(1), match.group(3), BASEURL + match.group(2) + thumbHeaders)
+            (match.group(1), match.group(3), BASEURL_MOBILE + match.group(2) + thumbHeaders)
             for match in re.finditer(
-                '''<a.*?"(.*?)".*?img src="(.*?)".*?div.*?div>(.*?)</div''', html[dataStartIndex : html.find('/ol')]
+                '''<a href="([^"]+).*?img src="([^"]+).*?div.*?div>(.*?)</div''', html[dataStartIndex : html.find('/ol')]
             )
         )
 
 
 def makePopularCatalog(params):
-    r = requestHelper(BASEURL + params['path'])
+    r = requestHelper(BASEURL) # We will scrape from the sidebar content on the homepage.
     html = r.text
 
-    dataStartIndex = html.find('menustyle')
+    dataStartIndex = html.find('"sidebar-titles"')
     if dataStartIndex == -1:
         raise Exception('Popular catalog scrape fail: ' + params['path'])
 
     return catalogFromIterable(
-        (match.group(1), match.group(2).strip())
+        match.groups()
         for match in re.finditer(
-            '''<a.*?href="([^"]+).*?>(.*?)</''', html[dataStartIndex : html.find('</li></ul>')]
+            '''<a href="([^"]+).*?>([^<]+)''', html[dataStartIndex : html.find('</div>', dataStartIndex)]
         )
     )
 
@@ -906,8 +899,8 @@ def makeSeriesSearchCatalog(params):
     return catalogFromIterable(
         match.groups()
         for match in re.finditer(
-            '''aramadabaslik.*?<a.*?"(.*?)".*?>(.*?)</''',
-            html[dataStartIndex : html.find('cizgiyazisi')],
+            '''<a href="([^"]+).*?>([^<]+)''',
+            html[dataStartIndex : html.find('cizgiyazisi', dataStartIndex)],
             re.DOTALL
         )
     )
@@ -918,7 +911,7 @@ def makeMoviesSearchCatalog(params):
     r = requestHelper(BASEURL + URL_PATHS['movies'])
     html = r.text
 
-    dataStartIndex = html.find(r'ddmcc">')
+    dataStartIndex = html.find('"ddmcc"')
     if dataStartIndex == -1:
         raise Exception('Movies search scrape fail: ' + params['query'])
 
@@ -927,7 +920,7 @@ def makeMoviesSearchCatalog(params):
     return catalogFromIterable(
         match.groups()
         for match in re.finditer(
-            '''<a.*?"(.*?)".*?>(.*?)</''', html[dataStartIndex : html.find(r'/ul></ul')]
+            '''<a href="([^"]+).*?>([^<]+)''', html[dataStartIndex : html.find('/ul></ul', dataStartIndex)]
         )
         if lowerQuery in match.group(2).lower()
     )
@@ -943,12 +936,11 @@ def makeEpisodesSearchCatalog(params):
     if dataStartIndex == -1:
         raise Exception('Episode search scrape fail: ' + params['query'])
 
-
     return catalogFromIterable(
         match.groups()
         for match in re.finditer(
-            '''<a.*?href="(.*?)".*?>(.*?)</''',
-            html[dataStartIndex : html.find('cizgiyazisi')],
+            '''<a href="([^"]+).*?>([^<]+)''',
+            html[dataStartIndex : html.find('cizgiyazisi', dataStartIndex)],
             re.DOTALL
         )
     )
@@ -970,16 +962,14 @@ def makeGenericCatalog(params):
     r = requestHelper(BASEURL + params['path'])
     html = r.text
 
-    dataStartIndex = html.find(r'ddmcc">')
+    dataStartIndex = html.find('"ddmcc"')
     if dataStartIndex == -1:
         raise Exception('Generic catalog scrape fail: ' + params['path'])
 
-    # Account for genre searches having a slightly different end pattern.
-    dataEndPattern = r'/ul></div></div' if 'search-by-genre' in params['path'] else r'/ul></ul'
     return catalogFromIterable(
         match.groups()
         for match in re.finditer(
-            '''<li><a.*?"(.*?)".*?>(.*?)</''', html[dataStartIndex : html.find(dataEndPattern)]
+            '''<li><a href="([^"]+).*?>([^<]+)''', html[dataStartIndex : html.find('</div>', dataStartIndex)]
         )
     )
 
@@ -1024,31 +1014,32 @@ def actionResolve(params):
     url = params['url']
     # Sanitize the URL since on some occasions it's a path instead of full address.
     url = url if url.startswith('http') else (BASEURL + (url if url.startswith('/') else '/' + url))
-    r = requestHelper(url.replace('watchcartoononline.io', 'wcostream.com', 1)) # New domain safety replace.
+    r = requestHelper(url.replace('watchcartoononline.io', 'thewatchcartoononline.tv', 1)) # New domain safety replace.
     content = r.content
 
-    def _decodeSource(content, startIndex):
-        subContent = content[startIndex:]
-        chars = re.search(b' = \[(".*?")\];', subContent).group(1)
-        spread = int(re.search(r' - (\d+)\)\; }', subContent).group(1))
-        iframe = ''
-        for char in chars.replace('"', '').split(','):
-            char = ''.join(d for d in b64decode(char) if d.isdigit())
-            char = chr(int(char) - spread)
-            iframe += char
-        return BASEURL + re.search(r'src="(.*?)"', iframe).group(1)
+    def _decodeSource(subContent):
+        chars = subContent[subContent.find('[') : subContent.find(']')]
+        spread = int(re.search(r' - (\d+)\)\; }', subContent[subContent.find(' - '):]).group(1))
+        iframe = ''.join(
+            chr(
+                int(''.join(c for c in b64decode(char) if c.isdigit())) - spread
+            )
+            for char in chars.replace('"', '').split(',')
+        )
+        return BASEURL + re.search(r'src="([^"]+)', iframe).group(1)
 
     # On rare cases an episode might have several "chapters", which are video players on the page.
-    embedURLPattern = b'<meta itemprop="embedURL'
+    embedURLPattern = b'onclick="myFunction'
     embedURLIndex = content.find(embedURLPattern)
     if 'playChapters' in params or ADDON.getSetting('chapterEpisodes') == 'true':
-        # Multi-chapter episode found (or, multiple "embedURL" statements found).
+        # Multi-chapter episode found (that is, multiple embedURLPattern statements found).
         # Extract all chapters from the page.
+        embedURLPatternLen = len(embedURLPattern)
         currentPlayerIndex = embedURLIndex
         dataIndices = [ ]
         while currentPlayerIndex != -1:
             dataIndices.append(currentPlayerIndex)
-            currentPlayerIndex = content.find(embedURLPattern, currentPlayerIndex + 24)
+            currentPlayerIndex = content.find(embedURLPattern, currentPlayerIndex + embedURLPatternLen)
 
         # If more than one "embedURL" statement found, make a selection dialog and call them "chapters".
         if len(dataIndices) > 1:
@@ -1059,12 +1050,12 @@ def actionResolve(params):
             selectedIndex = 0
 
         if selectedIndex != -1:
-            embedURL = _decodeSource(content, dataIndices[selectedIndex])
+            embedURL = _decodeSource(content[dataIndices[selectedIndex]:])
         else:
             return # User cancelled the chapter selection.
     else:
         # Normal / single-chapter episode.
-        embedURL = _decodeSource(content, content.find(b' = ["', embedURLIndex))
+        embedURL = _decodeSource(content[embedURLIndex:])
         if 'playChapters' in params: # User asked to play multiple chapters, but only one chapter/video player found.
             xbmcgui.Dialog().notification('Watchnixtoons2', 'Only 1 chapter found...', ADDON_ICON, 2000, False)
 
@@ -1075,7 +1066,7 @@ def actionResolve(params):
     # Find the stream URLs.
     if 'getvid?evid' in html:
         # Query-style stream getting.
-        sourceURL = re.search(b'get\("(.*?)"', html, re.DOTALL).group(1)
+        sourceURL = re.search(b'"(/inc/embed/getvidlink[^"]+)', html, re.DOTALL).group(1)
 
         # Inline code similar to 'requestHelper()'.
         # The User-Agent for this next request is somehow encoded into the media tokens, so we make sure to use
@@ -1220,21 +1211,19 @@ def getThumbnailHeaders():
     cookies = ('&Cookie=' + quote_plus(cookieProperty)) if cookieProperty else ''
 
     # Since it's a constant value, it can be precomputed.
-    return '|User-Agent=Mozilla%2F5.0+%28compatible%3B+WatchNixtoons2%2F0.3.8%3B' \
+    return '|User-Agent=Mozilla%2F5.0+%28compatible%3B+WatchNixtoons2%2F0.4.1%3B' \
     '+%2Bhttps%3A%2F%2Fgithub.com%2Fdoko-desuka%2Fplugin.video.watchnixtoons2%29' \
-    '&Accept=image%2Fwebp%2C%2A%2F%2A&Referer=https%3A%2F%2Fwww.wcostream.com%2F' + cookies
-
+    '&Accept=image%2Fwebp%2C%2A%2F%2A&Referer=https%3A%2F%2Fwww.thewatchcartoononline.tv%2F' + cookies
 
 
 def solveMediaRedirect(url, headers):
     # Use HEAD requests to fulfill possible 302 redirections.
-    # Return the final stream HEAD response.
-    done = False
-    while not done:
+    # Returns the final stream HEAD response.
+    while True:
         try:
             mediaHead = simpleRequest(url, requests.head, headers)
             if 'Location' in mediaHead.headers:
-                url = mediaHead.headers['Location'] # Change the URL to the redirected location and repeat the HEAD.
+                url = mediaHead.headers['Location'] # Change the URL to the redirected location.
             else:
                 mediaHead.raise_for_status()
                 return mediaHead # Return the response.
