@@ -28,8 +28,7 @@ PLUGIN_ID = int(sys.argv[1])
 PLUGIN_URL = sys.argv[0]
 
 BASEURL = 'https://www.thewatchcartoononline.tv'
-# Due to a recent bug on the server end, the mobile URL is now only used on 'makeLatestCatalog()' (and even
-# then, when it fails, we fall back to the desktop site).
+# Due to a recent bug on the server end, the mobile URL is now only used on 'makeLatestCatalog()'.
 BASEURL_MOBILE = 'https://m.wcostream.com' # Mobile version of one of their domains (seems to be the only one).
 
 PROPERTY_CATALOG_PATH = 'wnt2.catalogPath'
@@ -236,7 +235,7 @@ def actionEpisodesMenu(params):
         url = params['url'].replace('watchcartoononline.io', 'thewatchcartoononline.tv', 1)
         r = requestHelper(url if url.startswith('http') else BASEURL + url)
         html = r.text
-        
+
         plot, thumb = getPageMetadata(html)
 
         dataStartIndex = html.find('"sidebar_right3"')
@@ -289,9 +288,9 @@ def actionLatestMoviesMenu(params):
         r = requestHelper(BASEURL + params['path'])
         html = r.text
         setRawWindowProperty(PROPERTY_LATEST_MOVIES, html)
-    
+
     # Similar scraping logic to 'actionEpisodesMenu()'.
-    
+
     dataStartIndex = html.find('"sidebar_right3"')
     if dataStartIndex == -1:
         raise Exception('Latest movies scrape fail: ' + url)
@@ -466,7 +465,7 @@ def actionSearchHistoryClear(params):
     dialog = xbmcgui.Dialog()
     if dialog.yesno('Clear Search History', 'Are you sure?'):
         ADDON.setSetting('searchHistory', '')
-        dialog.notification('Watchnixtoons2', 'Search history cleared', xbmcgui.NOTIFICATION_INFO, 3000, False)
+        dialog.notification('WatchNixtoons2', 'Search history cleared', xbmcgui.NOTIFICATION_INFO, 3000, False)
         # Show the search menu afterwards.
         xbmc.executebuiltin('Container.Update(' + PLUGIN_URL + '?action=actionSearchMenu,replace)')
 
@@ -559,12 +558,152 @@ def actionClearTrakt(params):
     global ADDON
     xbmc.sleep(500)
     if SimpleTrakt.clearTokens(ADDON):
-        xbmcgui.Dialog().notification('Watchnixtoons2', 'Trakt tokens cleared', xbmcgui.NOTIFICATION_INFO, 3500, False)
+        xbmcgui.Dialog().notification('WatchNixtoons2', 'Trakt tokens cleared', xbmcgui.NOTIFICATION_INFO, 3500, False)
     else:
         xbmcgui.Dialog().notification(
-            'Watchnixtoons2', 'Trakt tokens already cleared', xbmcgui.NOTIFICATION_INFO, 3500, False
+            'WatchNixtoons2', 'Trakt tokens already cleared', xbmcgui.NOTIFICATION_INFO, 3500, False
         )
     ADDON = xbmcaddon.Addon()
+
+
+def actionRestoreDatabase(params):
+    if not xbmcgui.Dialog().yesno(
+        'WatchNixtoons2',
+        'This will update the Kodi database to remember any WatchNixtoons2 episodes that were already watched, ' \
+        'but forgotten after an add-on update.\nProceed?',
+        nolabel = 'Cancel',
+        yeslabel = 'Ok'
+    ):
+        return
+
+    # Action called from the settings dialog.
+    # This will update all the WatchNixtoons2 'strFilename' columns of table 'files' of Kodi's MyVideos###.db
+    # with the new BASEURL used by the add-on so that episodes are still considered as watched (playcount >= 1).
+
+    import xbmcvfs
+    try:
+        import sqlite3
+    except:
+        xbmcgui.Dialog().notification(
+            'WatchNixtoons2', 'sqlite3 not found', xbmcgui.NOTIFICATION_WARNING, 3000, True
+        )
+        return
+
+    # Find the 'MyVideos###.db' file.
+    dirs, files = xbmcvfs.listdir('special://database')
+    for file in files:
+        if 'MyVideos' in file and file.endswith('.db'):
+            path = xbmc.translatePath('special://database/' + file)
+            break
+    else:
+        xbmcgui.Dialog().notification(
+            'WatchNixtoons2', 'MyVideos database file not found', xbmcgui.NOTIFICATION_WARNING, 3000, True
+        )
+        return
+
+    # Update the database.
+
+    OLD_DOMAINS = getOldDomains()
+    NEW_DOMAIN = BASEURL.replace('https://', '', 1) # Make sure to strip the scheme from the current address.
+    replaceDomainFunc = lambda original, oldDomain: original.replace(oldDomain, NEW_DOMAIN)
+    totalUpdates = 0
+
+    try:
+        connection = sqlite3.connect(path)
+    except Exception as e:
+        xbmcDebug(e)
+        xbmcgui.Dialog().notification(
+            'WatchNixtoons2', 'Unable to connect to MyVideos database', xbmcgui.NOTIFICATION_WARNING, 3000, True
+        )
+        return
+
+    getCursor = connection.cursor()
+    setCursor = connection.cursor()
+    pattern = 'plugin://plugin.video.watchnixtoons2/%actionResolve%'
+    for idFile, strFilename in getCursor.execute(
+        "SELECT idFile,strFilename FROM files WHERE strFilename LIKE '%s'" % pattern
+    ):
+        if any(oldDomain in strFilename for oldDomain in OLD_DOMAINS):
+            strFilename = reduce(replaceDomainFunc, OLD_DOMAINS, strFilename)
+            setCursor.execute("UPDATE files SET strFilename=? WHERE idFile=?", (strFilename, idFile))
+            totalUpdates += 1
+
+    try:
+        if totalUpdates:
+            connection.commit() # Only commit if needed.
+        connection.close()
+    except:
+        xbmcgui.Dialog().notification(
+            'WatchNixtoons2',
+            'Unable to update the database (file permission error?)',
+            xbmcgui.NOTIFICATION_WARNING,
+            3000,
+            True
+        )
+        return
+
+    # Bring a notification before finishing.
+    if totalUpdates:
+        xbmcgui.Dialog().ok('WatchNixtoons2', 'Database update complete (%i items updated).' % totalUpdates)
+    else:
+        xbmcgui.Dialog().ok('WatchNixtoons2', 'Finished. No updates needed (0 items updated).')
+
+
+def actionUpdateFavourites(params):
+    if not xbmcgui.Dialog().yesno(
+        'WatchNixtoons2',
+        'This will update any of your Kodi Favourites created with older versions of WatchNixtoons2 so they can point ' \
+        'to the latest web address that the add-on uses.\nProceed?',
+        nolabel = 'Cancel',
+        yeslabel = 'Ok'
+    ):
+        return
+
+    # Action called from the settings dialog.
+    # This will update all the Kodi favourites that use WatchNixtoons2 so that they use the new BASEURL.
+
+    import xbmcvfs
+    FAVOURITES_PATH = 'special://userdata/favourites.xml'
+
+    file = xbmcvfs.File(FAVOURITES_PATH)
+    favoritesText = file.read()
+    file.close()
+    originalText = favoritesText[:] # Get a backup copy of the content.
+
+    OLD_DOMAINS = getOldDomains()
+    NEW_DOMAIN = BASEURL.replace('https://', '', 1) # Make sure to strip the scheme.
+    replaceDomainFunc = lambda original, oldDomain: original.replace(oldDomain, NEW_DOMAIN)
+
+    if any(oldDomain in originalText for oldDomain in OLD_DOMAINS):
+        favoritesText = reduce(replaceDomainFunc, getOldDomains(), favoritesText)
+        try:
+            file = xbmcvfs.File(FAVOURITES_PATH, 'w')
+            file.write(favoritesText)
+            file.close()
+        except:
+            try:
+                # Try again, in case this was some weird encoding error and not a write-permission error.
+                file = xbmcvfs.File(FAVOURITES_PATH, 'w')
+                file.write(originalText)
+                file.close()
+                detail = ' (original was restored)'
+            except:
+                detail = ''
+
+            xbmcgui.Dialog().notification(
+                'WatchNixtoons2', 'Error while writing to file' + detail, xbmcgui.NOTIFICATION_WARNING, 3000, True
+            )
+            return
+
+        if 'watchnixtoons2' in xbmc.getInfoLabel('Container.PluginName'):
+            xbmc.executebuiltin('Dialog.Close(all)')
+
+        xbmcgui.Dialog().ok(
+            'WatchNixtoons2', 'One or more items updated succesfully. Kodi will now reload the Favourites file...'
+        )
+        xbmc.executebuiltin('LoadProfile(%s)' % xbmc.getInfoLabel('System.ProfileName')) # Reloads 'favourites.xml'.
+    else:
+        xbmcgui.Dialog().ok('WatchNixtoons2', 'Finished. No old favorites found.')
 
 
 def actionShowSettings(params):
@@ -596,7 +735,7 @@ def getPageMetadata(html):
             r = requestHelper(parentURL if parentURL.startswith('http') else BASEURL + parentURL)
             if r.ok:
                 html = r.text
-    
+
     # Thumbnail scraping.
     thumb = ''
     stringStartIndex = html.find('og:image" content="')
@@ -607,27 +746,27 @@ def getPageMetadata(html):
                 thumb = thumbPath + getThumbnailHeaders()
             elif thumbPath.startswith('/'):
                 thumb = BASEURL + thumbPath + getThumbnailHeaders()
-    
+
     # (Show) plot scraping.
     plot = ''
     stringStartIndex = html.find('Info:')
     if stringStartIndex != -1:
         match = re.search('</h3>\s*<p>(.*?)</p>', html[stringStartIndex:], re.DOTALL)
         plot = unescapeHTMLText(match.group(1).strip()) if match else ''
-    
+
     return plot, thumb
-    
+
 
 def actionShowInfo(params):
-    xbmcgui.Dialog().notification('Watchnixtoons2', 'Requesting info...', ADDON_ICON, 2000, False)
+    xbmcgui.Dialog().notification('WatchNixtoons2', 'Requesting info...', ADDON_ICON, 2000, False)
 
     # Get the desktop page for the item, whatever it is.
     url = params['url'].replace('/m.', '/www.', 1) # Make sure the URL points to the desktop site.
     r = requestHelper(url if url.startswith('http') else BASEURL + url)
     html = r.text
-    
+
     plot, thumb = getPageMetadata(html)
-    
+
     # Use a persistent memory property holding a dictionary, and refresh the directory listing.
     if plot or thumb:
         infoItems = getWindowProperty(PROPERTY_INFO_ITEMS) or { }
@@ -636,7 +775,7 @@ def actionShowInfo(params):
         oldParams = dict(parse_qsl(params['oldParams']))
         xbmc.executebuiltin('Container.Update(%s,replace)' % (PLUGIN_URL + '?' + params['oldParams']))
     else:
-        xbmcgui.Dialog().notification('Watchnixtoons2', 'No info found', ADDON_ICON, 1500, False)
+        xbmcgui.Dialog().notification('WatchNixtoons2', 'No info found', ADDON_ICON, 1500, False)
 
 
 def unescapeHTMLText(text):
@@ -1057,7 +1196,7 @@ def actionResolve(params):
         # Normal / single-chapter episode.
         embedURL = _decodeSource(content[embedURLIndex:])
         if 'playChapters' in params: # User asked to play multiple chapters, but only one chapter/video player found.
-            xbmcgui.Dialog().notification('Watchnixtoons2', 'Only 1 chapter found...', ADDON_ICON, 2000, False)
+            xbmcgui.Dialog().notification('WatchNixtoons2', 'Only 1 chapter found...', ADDON_ICON, 2000, False)
 
     # Request the embedded player page.
     r2 = requestHelper(unescapeHTMLText(embedURL)) # Sometimes a '&#038;' symbol is present in this URL.
@@ -1145,13 +1284,23 @@ def actionResolve(params):
         item = xbmcgui.ListItem(xbmc.getInfoLabel('ListItem.Label'))
         item.setPath(mediaHead.url + '|' + '&'.join(key+'='+quote_plus(val) for key, val in MEDIA_HEADERS.iteritems()))
         item.setMimeType(mediaHead.headers.get('Content-Type', 'video/mp4')) # Avoids Kodi's MIME request.
+
+        # When coming in from a Favourite item, there will be no metadata. Try to get at least a title.
+        itemTitle = xbmc.getInfoLabel('ListItem.Title')
+        if not itemTitle:
+            match = re.search(b'<h1[^>]+>([^<]+)</h1', content)
+            if match:
+                itemTitle = match.group(1).replace(' English Subbed', '', 1).replace( 'English Dubbed', '', 1)
+            else:
+                itemTitle = ''
+
         episodeString = xbmc.getInfoLabel('ListItem.Episode')
         if episodeString != '' and episodeString != '-1':
             seasonInfoLabel = xbmc.getInfoLabel('ListItem.Season')
             item.setInfo('video',
                 {
                     'tvshowtitle': xbmc.getInfoLabel('ListItem.TVShowTitle'),
-                    'title': xbmc.getInfoLabel('ListItem.Title'),
+                    'title': itemTitle,
                     'season': int(seasonInfoLabel) if seasonInfoLabel.isdigit() else -1,
                     'episode': int(episodeString),
                     'plot': xbmc.getInfoLabel('ListItem.Plot'),
@@ -1161,11 +1310,12 @@ def actionResolve(params):
         else:
             item.setInfo('video',
                 {
-                    'title': xbmc.getInfoLabel('ListItem.Title'),
+                    'title': itemTitle,
                     'plot': xbmc.getInfoLabel('ListItem.Plot'),
                     'mediatype': 'movie'
                 }
             )
+
         #xbmc.Player().play(listitem=item) # Alternative play method, lets you extend the Player class with your own.
         xbmcplugin.setResolvedUrl(PLUGIN_ID, True, item)
     else:
@@ -1192,7 +1342,7 @@ def setViewMode():
 
 
 def xbmcDebug(*args):
-    xbmc.log('WATCHNIXTOONS2 > '+' '.join((val if isinstance(val, str) else repr(val)) for val in args), xbmc.LOGWARNING)
+    xbmc.log('WATCHNIXTOONS2 > ' + ' '.join((val if isinstance(val, str) else repr(val)) for val in args), xbmc.LOGWARNING)
 
 
 def simpleRequest(url, requestFunc, headers):
@@ -1214,6 +1364,13 @@ def getThumbnailHeaders():
     return '|User-Agent=Mozilla%2F5.0+%28compatible%3B+WatchNixtoons2%2F0.4.1%3B' \
     '+%2Bhttps%3A%2F%2Fgithub.com%2Fdoko-desuka%2Fplugin.video.watchnixtoons2%29' \
     '&Accept=image%2Fwebp%2C%2A%2F%2A&Referer=https%3A%2F%2Fwww.thewatchcartoononline.tv%2F' + cookies
+
+
+def getOldDomains():
+    # Old possible domains, in the order of likeliness.
+    return (
+        'www.wcostream.com', 'm.wcostream.com', 'www.watchcartoononline.io', 'm.watchcartoononline.io'
+    )
 
 
 def solveMediaRedirect(url, headers):
