@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="plugin.video.watchnixtoons2" name="WatchNixtoons2" version="0.4.1" provider-name="doko">
+<addon id="plugin.video.watchnixtoons2" name="WatchNixtoons2" version="0.4.2" provider-name="doko">
     <requires>
         <import addon="xbmc.python" version="2.20.0"/>
         <import addon="script.module.requests"/>
@@ -10,6 +10,12 @@
     <extension point="xbmc.addon.metadata">
         <news>
 [COLOR orange][B]WatchNixtoons2[/B][/COLOR] - Cartoons &amp; Anime
+[B]0.4.2:[/B]
+- Added a [B]Tools[/B] category to the settings. Each tool brings up a confirmation dialog
+explaining how they work, so you can read before using.
+- Tools added: Restore Watched Episodes, Update Favourites.
+- Minor fix to movie titles.
+
 [B]0.4.1:[/B]
 - Changed to a WatchCartoonOnline domain that's updated more frequently.
 - Fix for letters in episode numbers (when using the "Clean Episode Titles" option).
@@ -28,14 +34,6 @@
 
 [B]0.3.6:[/B]
 - Updated the URL to the website, after a domain change.
-
-[B]0.3.5:[/B]
-- Fixed the Episode and Movie searches, the results are now playable.
-- Added the "Always Show Multi-chapter Dialog" setting, for use w/ shows that split episodes in parts.
-- Improved the Trakt listings, they now support movies, shows, seasons and episodes.
-
-[B]0.3.4:[/B]
-- Added a simple search history feature, see Search -> "Search History" menu.
         </news>
         <description lang="en">
 Watch cartoons and anime from [COLOR orange][B]www.TheWatchCartoonOnline.tv[/B][/COLOR].

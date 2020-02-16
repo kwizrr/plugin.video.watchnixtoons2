@@ -16,6 +16,13 @@
         <setting id="useViewMode" label="Force View Mode" type="bool" default="false"/>
         <setting id="viewModeID" label="Enter View Id" type="number" subsetting="true" enable="eq(-1,true)" default=""/>
     </category>
+    <category label="Tools">
+        <setting type="lsep" label="[B]To restore the 'watched' status of episodes watched on old WNT2 versions:[/B]"/>
+        <setting id="restoreWatched" label="Restore Watched Episodes..." type="action" action="RunPlugin(plugin://plugin.video.watchnixtoons2/?action=actionRestoreDatabase)"/>
+        <setting type="sep"/>
+        <setting type="lsep" label="[B]To update your Kodi Favourites that have links to old WNT2 domains:[/B]"/>
+        <setting id="updateFavourites" label="Update Favourites..." type="action" action="RunPlugin(plugin://plugin.video.watchnixtoons2/?action=actionUpdateFavourites)"/>
+    </category>
     <category label="Trakt">
         <setting id="clearTrakt" label="Clear Trakt Token" type="action" action="RunPlugin(plugin://plugin.video.watchnixtoons2/?action=actionClearTrakt)"/>
     </category>
