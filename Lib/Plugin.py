@@ -1038,9 +1038,8 @@ def makeSeriesSearchCatalog(params):
     return catalogFromIterable(
         match.groups()
         for match in re.finditer(
-            '''<a href="([^"]+).*?>([^<]+)''',
-            html[dataStartIndex : html.find('cizgiyazisi', dataStartIndex)],
-            re.DOTALL
+            '''<a href="([^"]+)[^>]*>([^<]+)</a''',
+            html[dataStartIndex : html.find('cizgiyazisi', dataStartIndex)]
         )
     )
 
@@ -1078,7 +1077,7 @@ def makeEpisodesSearchCatalog(params):
     return catalogFromIterable(
         match.groups()
         for match in re.finditer(
-            '''<a href="([^"]+).*?>([^<]+)''',
+            '''<a href="([^"]+)[^>]*>([^<]+)</a''',
             html[dataStartIndex : html.find('cizgiyazisi', dataStartIndex)],
             re.DOTALL
         )
