@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="plugin.video.watchnixtoons2" name="WatchNixtoons2" version="0.4.3" provider-name="doko">
+<addon id="plugin.video.watchnixtoons2" name="WatchNixtoons2" version="0.4.5" provider-name="doko">
     <requires>
-        <import addon="xbmc.python" version="2.20.0"/>
+        <import addon="xbmc.python" version="2.25.0"/>
         <import addon="script.module.requests"/>
     </requires>
     <extension point="xbmc.python.pluginsource" library="Default.py">
@@ -10,6 +10,12 @@
     <extension point="xbmc.addon.metadata">
         <news>
 [COLOR orange][B]WatchNixtoons2[/B][/COLOR] - Cartoons &amp; Anime
+[B]0.4.5:[/B]
+- Temporary disabling of the add-on. If the source site ever comes back, we can enable it again.
+
+[B]0.4.4:[/B]
+- Added an "About" button to the Trakt tab of the add-on settings, explaining how to use it.
+
 [B]0.4.3:[/B]
 - Fixed the series and episode search.
 
