@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="plugin.video.watchnixtoons2" name="WatchNixtoons2" version="0.4.5" provider-name="doko">
+<addon id="plugin.video.watchnixtoons2" name="WatchNixtoons2" version="0.4.6" provider-name="doko">
     <requires>
         <import addon="xbmc.python" version="2.25.0"/>
         <import addon="script.module.requests"/>
@@ -10,6 +10,10 @@
     <extension point="xbmc.addon.metadata">
         <news>
 [COLOR orange][B]WatchNixtoons2[/B][/COLOR] - Cartoons &amp; Anime
+[B]0.4.6:[/B]
+- Add-on re-enabled. Their site is back to letting free users watch videos.
+- To avoid overwhelming their servers on these COVID-19 quarantine times, the "autoplay highest quality" add-on setting was removed. So when you play a video, you'll always be asked what quality to use.
+
 [B]0.4.5:[/B]
 - Temporary disabling of the add-on. If the source site ever comes back, we can enable it again.
 
