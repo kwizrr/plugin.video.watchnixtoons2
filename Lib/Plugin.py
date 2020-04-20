@@ -46,6 +46,8 @@ ADDON_SHOW_CATALOG = ADDON.getSetting('showCatalog') == 'true'
 ADDON_LATEST_DATE = ADDON.getSetting('useLatestDate') == 'true'
 # Use Latest Releases thumbs: whether to show a little thumbnail available for the Latest Releases items only.
 ADDON_LATEST_THUMBS = ADDON.getSetting('showLatestThumbs') == 'true'
+# Use poster images for each catalog folder. Makes for a better experience on custom Kodi skins.
+ADDON_CATALOG_THUMBS = ADDON.getSetting('showCatalogThumbs') == 'true'
 ADDON_ICON = ADDON.getAddonInfo('icon')
 ADDON_ICON_DICT = {'icon': ADDON_ICON, 'thumb': ADDON_ICON, 'poster': ADDON_ICON}
 ADDON_TRAKT_ICON = 'special://home/addons/plugin.video.watchnixtoons2/resources/traktIcon.png'
@@ -105,22 +107,57 @@ def actionCatalogMenu(params):
     catalog = getCatalogProperty(params)
 
     if ADDON_SHOW_CATALOG:
-        listItems = tuple(
-            (
-                buildURL({'action': 'actionCatalogSection', 'path': params['path'], 'section': sectionName}),
-                xbmcgui.ListItem(sectionName),
-                True
-            )
-            for sectionName in sorted(catalog.iterkeys()) if len(catalog[sectionName])
-        )
-        if len(listItems):
-            if len(listItems) > 1:
+        def _catalogMenuItemsMake():
+            items = [ ]
+            if ADDON_CATALOG_THUMBS:
+                # The catalog folders will each get a letter image, taken from the web (this way
+                # these images don't have to be distributed w/ the add-on, if they're not needed).
+                # After they're downloaded, the images exist in Kodi's image cache folders.
+                THUMBS_BASEURL = 'https://doko-desuka.github.io/128h/'
+                artDict = {'thumb': None}
+                miscItem = None
+                for sectionName in sorted(catalog.iterkeys()):
+                    if catalog[sectionName]:
+                        item = xbmcgui.ListItem(sectionName)
+                        # Correct the address for the '#' (miscellaneous, non-letter) category.
+                        artDict['thumb'] = THUMBS_BASEURL + ('0' if sectionName == '#' else sectionName) + '.png'
+                        item.setArt(artDict)
+                        item.setInfo('video', {'plot': sectionName})
+                        items.append(
+                            (
+                                buildURL({'action': 'actionCatalogSection', 'path': params['path'], 'section': sectionName}),
+                                item,
+                                True
+                            )
+                        )
+            else:
+                items = [
+                    (
+                        buildURL({'action': 'actionCatalogSection', 'path': params['path'], 'section': sectionName}),
+                        xbmcgui.ListItem(sectionName),
+                        True
+                    )
+                    for sectionName in sorted(catalog.iterkeys()) if len(catalog[sectionName])
+                ]
+            # See if an "All" folder is necessary (when there's more than one folder in the catalog).
+            if len(items) > 1:
                 sectionAll = (
                     buildURL({'action': 'actionCatalogSection', 'path': params['path'], 'section': 'ALL'}),
                     xbmcgui.ListItem('All'),
                     True
                 )
-                xbmcplugin.addDirectoryItems(PLUGIN_ID, (sectionAll,) + listItems)
+                if ADDON_CATALOG_THUMBS:
+                    artDict['thumb'] = THUMBS_BASEURL + 'ALL.png'
+                    sectionAll[1].setArt(artDict)
+                    sectionAll[1].setInfo('video', {'plot': 'All'})
+                return [sectionAll] + items
+            else:
+                return items
+
+        items = _catalogMenuItemsMake()
+        if items:
+            if len(items) > 1:
+                xbmcplugin.addDirectoryItems(PLUGIN_ID, items)
             else:
                 # Conveniency when a search leads to only 1 result, show it already without the catalog screen.
                 params['section'] = 'ALL'
@@ -1173,7 +1210,12 @@ def actionResolve(params):
             )
             for char in chars.replace('"', '').split(',')
         )
-        return BASEURL + re.search(r'src="([^"]+)', iframe).group(1)
+        try:
+            return BASEURL + re.search(r'src="([^"]+)', iframe).group(1)
+        except:
+            return None # Probably a temporary block, or change in embedded code.
+
+    embedURL = None
 
     # On rare cases an episode might have several "chapters", which are video players on the page.
     embedURLPattern = b'onclick="myFunction'
@@ -1203,8 +1245,18 @@ def actionResolve(params):
     else:
         # Normal / single-chapter episode.
         embedURL = _decodeSource(content[embedURLIndex:])
-        if 'playChapters' in params: # User asked to play multiple chapters, but only one chapter/video player found.
+        # User asked to play multiple chapters, but only one chapter/video player found.
+        if embedURL and 'playChapters' in params:
             xbmcgui.Dialog().notification('WatchNixtoons2', 'Only 1 chapter found...', ADDON_ICON, 2000, False)
+
+    # Handle temporary blocks / failures.
+    if not embedURL:
+        if b'high volume of requests' in content:
+            xbmcgui.Dialog().ok(
+                'WatchNixtoons2',
+                'Server response: "We are getting extremely high volume of requests on our video servers so that we temporarily block for free videos for free users. I apologize for the inconvenience."'
+            )
+        return
 
     # Request the embedded player page.
     r2 = requestHelper(unescapeHTMLText(embedURL)) # Sometimes a '&#038;' symbol is present in this URL.
@@ -1258,7 +1310,7 @@ def actionResolve(params):
         mediaURL = sourceURLs[0][1]
     elif len(sourceURLs) > 0:
         # Always force "select quality" for now.
-        playbackMethod = '0' #ADDON.getSetting('playbackMethod')
+        playbackMethod = ADDON.getSetting('playbackMethod')
         if playbackMethod == '0': # Select quality.
                 selectedIndex = xbmcgui.Dialog().select(
                     'Select Quality', [(sourceItem[0] or '?') for sourceItem in sourceURLs]
