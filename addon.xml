@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="plugin.video.watchnixtoons2" name="WatchNixtoons2" version="0.4.7" provider-name="doko">
+<addon id="plugin.video.watchnixtoons2" name="WatchNixtoons2" version="0.4.8" provider-name="doko">
     <requires>
         <import addon="xbmc.python" version="2.25.0"/>
         <import addon="script.module.requests"/>
@@ -10,8 +10,11 @@
     <extension point="xbmc.addon.metadata">
         <news>
 [COLOR orange][B]WatchNixtoons2[/B][/COLOR] - Cartoons &amp; Anime
+[B]0.4.8:[/B]
+- Fixed a typo in the addons.xml file (thanks @SerpentDrago!)
+
 [B]0.4.7:[/B]
-- Autoplay setting reinstated. I don't even care anymore.
+- Autoplay setting reinstated.
 - Added an option to show letter thumbnails on the catalog sections. Only useful if you're on a custom Kodi skin.
 - Added a warning whenever a video is blocked from excess traffic.
 
