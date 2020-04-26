@@ -13,7 +13,7 @@ from time import time, sleep
 from urlparse import parse_qsl
 from string import ascii_uppercase
 from urllib import quote_plus, urlencode
-from os import sep as osSeparator
+from os import sep as osSeparator #added by Christian Haitian
 
 import xbmc
 import xbmcgui
@@ -799,6 +799,22 @@ def actionUpdateFavourites(params):
     else:
         xbmcgui.Dialog().ok('WatchNixtoons2', 'Finished. No old favorites found.')
 
+#Added by Christian Haitian
+def actionClearCookies(params):
+    if not xbmcgui.Dialog().yesno(
+        'WatchNixtoons2',
+        'This will clear the stored cookies for WatchNixToons2 Premimum site.  Do this if you entered  ' \
+        'wrong credentials and attempted to use the plugin or recently changed your credentials.\nProceed?',
+        nolabel = 'Cancel',
+        yeslabel = 'Ok'
+    ):
+        return
+
+    # Action called from the settings dialog.
+    # Clear stored cookie file from addon folder.
+
+    os.remove(cookieFile)
+    xbmcgui.Dialog().ok('WatchNixtoons2', 'Successfully cleared cookies.')
 
 def actionShowSettings(params):
     # Modal dialog, so the program won't continue from this point until user closes\confirms it.
