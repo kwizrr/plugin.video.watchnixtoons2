@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <settings>
     <category label="Interface">
+		<setting type="lsep" label="Login"/>
+		<setting id="sep"/>
+	 <setting id="watchnixtoons2.name" label="Username" type="text" default=""/>
+	 <setting id="watchnixtoons2.password" label="Password" type="text" option="hidden" default=""/>
 		<setting type="lsep" label="Playback:"/>
         <setting id="playbackMethod" label="Playback Method" type="enum" default="0" values="Select Quality Via Dialog|Auto Play Highest Quality|Auto Play Lowest Quality"/>
         <setting type="sep"/>
