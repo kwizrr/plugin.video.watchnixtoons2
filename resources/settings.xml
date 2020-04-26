@@ -29,6 +29,9 @@
         <setting type="sep"/>
         <setting type="lsep" label="[B]To update your Kodi Favourites that have links to old WNT2 domains:[/B]"/>
         <setting id="updateFavourites" label="Update Favourites..." type="action" action="RunPlugin(plugin://plugin.video.watchnixtoons2/?action=actionUpdateFavourites)"/>
+        <setting type="sep"/>
+        <setting type="lsep" label="[B]Clear existing WatchNixToons2 Cookies[/B]"/>
+        <setting id="updateCookies" label="Clear Cookies..." type="action" action="RunPlugin(plugin://plugin.video.watchnixtoons2/?action=actionClearCookies)"/>
     </category>
     <category label="Trakt">
         <setting id="trakt.about" label="About..." type="action" action="RunPlugin(plugin://plugin.video.watchnixtoons2/?action=actionTraktAbout)"/>
