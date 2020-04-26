@@ -10,4 +10,4 @@ As of the time of this readme creation, the monthly cost is $2.99 which, in my h
 
 Consider becoming a member and help this site to continue.
 
-# Important Note!  If you enter bad credentials or change credentials, you will have to correct this in the settings menu on the interface section then go to the tools section and click on clear cookies.  If you don't do this, the plugin will error out.
+# Important Note!  If you enter bad credentials or change credentials later, you will have to correct this in the settings menu on the interface section then go to the tools section and click on clear cookies.  If you don't do this, the plugin will error out.
