@@ -2,6 +2,10 @@
 import re
 import sys
 import requests
+import json #added by Christian Haitian
+import os #added by Christian Haitian
+import pickle #added by Christian Haitian
+from urlparse import urlparse, urljoin #added by Christian Haitian
 
 from itertools import chain
 from base64 import b64decode
@@ -9,6 +13,7 @@ from time import time, sleep
 from urlparse import parse_qsl
 from string import ascii_uppercase
 from urllib import quote_plus, urlencode
+from os import sep as osSeparator
 
 import xbmc
 import xbmcgui
@@ -27,7 +32,10 @@ requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 PLUGIN_ID = int(sys.argv[1])
 PLUGIN_URL = sys.argv[0]
 
-BASEURL = 'https://www.thewatchcartoononline.tv'
+#Mod by Christian Haitian starts here
+BASEURL = 'https://user.wco.tv'
+#Mod by Christian Haitian starts here
+
 # Due to a recent bug on the server end, the mobile URL is now only used on 'makeLatestCatalog()'.
 BASEURL_MOBILE = 'https://m.wcostream.com' # Mobile version of one of their domains (seems to be the only one).
 
@@ -39,7 +47,47 @@ PROPERTY_LATEST_MOVIES = 'wnt2.latestMovies'
 PROPERTY_INFO_ITEMS = 'wnt2.infoItems'
 PROPERTY_SESSION_COOKIE = 'wnt2.cookie'
 
+#Mod by Christian Haitian starts here
 ADDON = xbmcaddon.Addon()
+#Define addon plugin directory
+Data_Dir = os.path.join(xbmcaddon.Addon().getAddonInfo('path'))
+login = ADDON.getSetting('watchnixtoons2.name')
+password = ADDON.getSetting('watchnixtoons2.password')
+# Assuming two cookies are used for persistent login.
+# (Find it by tracing the login process)
+persistentCookieNames = ['wordpress_sec_231de03aca492828e4d084c4d94c5935', 'wordpress_logged_in_231de03aca492828e4d084c4d94c5935']
+URL = 'https://user.wco.tv'
+urlData = urlparse(URL)
+#Downloaded wco cookie will be stored addon plugin directory
+cookieFile = Data_Dir + osSeparator + urlData.netloc + '.cookie'
+signinUrl = urljoin(URL, "/wp-login.php")
+with requests.Session() as session:
+    try:
+        with open(cookieFile, 'rb') as f:
+            print("Loading cookies...")
+            session.cookies.update(pickle.load(f))
+    except Exception:
+        # If could not load cookies from file, get the new ones by login in
+        print("Login in...")
+        post = session.post(
+            signinUrl,
+            data={
+                'log': login,
+                'pwd': password,
+            }
+        )
+        try:
+            with open(cookieFile, 'wb') as f:
+                jar = requests.cookies.RequestsCookieJar()
+                for cookie in session.cookies:
+                    if cookie.name in persistentCookieNames:
+                        jar.set_cookie(cookie)
+                pickle.dump(jar, f)
+        except Exception as e:
+            os.remove(cookieFile)
+            raise(e)
+#Mod by Christian Haitian ends here
+
 # Show catalog: whether to show the catalog categories or to go straight to the "ALL" section with all items visible.
 ADDON_SHOW_CATALOG = ADDON.getSetting('showCatalog') == 'true'
 # Use Latest Releases date: whether to sort the Latest Releases items by their date, or with a catalog.
@@ -269,7 +317,7 @@ def actionEpisodesMenu(params):
         listData = getWindowProperty(PROPERTY_EPISODE_LIST_DATA)
     else:
         # New domain safety replace, in case the user is coming in from an old Kodi favorite item.
-        url = params['url'].replace('watchcartoononline.io', 'thewatchcartoononline.tv', 1)
+        url = params['url'].replace('user.wco.tv', 'thewatchcartoononline.tv', 1)
         r = requestHelper(url if url.startswith('http') else BASEURL + url)
         html = r.text
 
@@ -1198,7 +1246,7 @@ def actionResolve(params):
     url = params['url']
     # Sanitize the URL since on some occasions it's a path instead of full address.
     url = url if url.startswith('http') else (BASEURL + (url if url.startswith('/') else '/' + url))
-    r = requestHelper(url.replace('watchcartoononline.io', 'thewatchcartoononline.tv', 1)) # New domain safety replace.
+    r = requestHelper(url.replace('user.wco.tv', 'thewatchcartoononline.tv', 1)) # New domain safety replace.
     content = r.content
 
     def _decodeSource(subContent):
@@ -1470,10 +1518,14 @@ def requestHelper(url, data=None, extraHeaders=None):
 
     startTime = time()
 
+#Mod by Christian Haitian starts here
+
     if data:
-        response = requests.post(url, data=data, headers=myHeaders, verify=False, cookies=cookieDict, timeout=10)
+        response = session.post(url, data=data, headers=myHeaders, verify=False, timeout=10)
     else:
-        response = requests.get(url, headers=myHeaders, verify=False, cookies=cookieDict, timeout=10)
+        response = session.get(url, headers=myHeaders, verify=False, timeout=10)
+
+#Mod by Christian Haitian starts here
 
     # Store the session cookie(s), if any.
     if not cookieProperty and response.cookies:
