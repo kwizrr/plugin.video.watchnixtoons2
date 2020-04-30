@@ -5,6 +5,7 @@ import requests
 import json #added by Christian Haitian
 import os #added by Christian Haitian
 import pickle #added by Christian Haitian
+import datetime #added by Christian Haitian
 from urlparse import urlparse, urljoin #added by Christian Haitian
 
 from itertools import chain
@@ -61,6 +62,13 @@ urlData = urlparse(URL)
 #Downloaded wco cookie will be stored addon plugin directory
 cookieFile = Data_Dir + osSeparator + urlData.netloc + '.cookie'
 signinUrl = urljoin(URL, "/wp-login.php")
+#Check if cookie is older than 24 hours.  If so delete, it so it can be recreated.
+if os.access(cookieFile, os.F_OK):
+	date_check = datetime.datetime.fromtimestamp(os.path.getmtime(cookieFile))
+	if datetime.datetime.now() - date_check > datetime.timedelta(hours=24):
+			os.remove(cookieFile)
+
+#Setup wco session with a new cookie if it does not exists.
 with requests.Session() as session:
     try:
         with open(cookieFile, 'rb') as f:
