@@ -1279,14 +1279,8 @@ def actionResolve(params):
     url = params['url']
     # Sanitize the URL since on some occasions it's a path instead of full address.
     url = url if url.startswith('http') else (BASEURL + (url if url.startswith('/') else '/' + url))
-
-    if BASEURL == 'https://www.thewatchcartoononline.tv':
-       r = requestHelper(url.replace('watchcartoononline.io', 'thewatchcartoononline.tv', 1)) # New domain safety replace.
-       content = r.content
-    else:
-		r = requestHelper(url.replace('watchcartoononline.io', 'user.wco.tv', 1)) # New domain safety.
-		content = r.content
-
+    r = requestHelper(url.replace('user.wco.tv', 'thewatchcartoononline.tv', 1)) # New domain safety.
+    content = r.content
 
     def _decodeSource(subContent):
         chars = subContent[subContent.find('[') : subContent.find(']')]
@@ -1338,10 +1332,10 @@ def actionResolve(params):
 
     # Handle temporary blocks / failures.
     if not embedURL:
-        if b'high volume of requests' in content:
+        if 'high volume of requests' in content:
             xbmcgui.Dialog().ok(
-                'WatchNixtoons2',
-                'Server response: "We are getting extremely high volume of requests on our video servers so that we temporarily block for free videos for free users. I apologize for the inconvenience."'
+                'WatchNixtoons2 Fail (Server Response)',
+                '"We are getting extremely high volume of requests on our video servers so that we temporarily block for free videos for free users. I apologize for the inconvenience."'
             )
         return
 
@@ -1559,14 +1553,15 @@ def requestHelper(url, data=None, extraHeaders=None):
 
 #Mod by Christian Haitian starts here
 
-    if data == None and BASEURL == 'https://user.wco.tv':
+    if data and BASEURL == 'https://user.wco.tv':
         response = session.post(url, data=data, headers=myHeaders, verify=False, timeout=10)
-    elif data == None and BASEURL == 'https://www.thewatchcartoononline.tv':
+    elif data and BASEURL == 'https://www.thewatchcartoononline.tv':
         response = requests.post(url, data=data, headers=myHeaders, verify=False, cookies=cookieDict, timeout=10)
-    elif data != None and BASEURL == 'https://user.wco.tv':
-        response = session.get(url, headers=myHeaders, verify=False, timeout=10)
     else:
-        response = requests.get(url, headers=myHeaders, verify=False, cookies=cookieDict, timeout=10)
+         if BASEURL == 'https://user.wco.tv': 
+		     response = session.get(url, headers=myHeaders, verify=False, timeout=10)
+         else:
+		     response = requests.get(url, headers=myHeaders, verify=False, cookies=cookieDict, timeout=10)
 
 #Mod by Christian Haitian starts here
 
