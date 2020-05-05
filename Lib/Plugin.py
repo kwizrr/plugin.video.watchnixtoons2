@@ -34,7 +34,11 @@ PLUGIN_ID = int(sys.argv[1])
 PLUGIN_URL = sys.argv[0]
 
 #Mod by Christian Haitian starts here
-BASEURL = 'https://user.wco.tv'
+ADDON = xbmcaddon.Addon()
+if (not (ADDON.getSetting('watchnixtoons2.name') and not ADDON.getSetting('watchnixtoons2.name').isspace())):
+    BASEURL = 'https://www.thewatchcartoononline.tv'
+else:
+    BASEURL = 'https://user.wco.tv'
 #Mod by Christian Haitian starts here
 
 # Due to a recent bug on the server end, the mobile URL is now only used on 'makeLatestCatalog()'.
@@ -49,51 +53,51 @@ PROPERTY_INFO_ITEMS = 'wnt2.infoItems'
 PROPERTY_SESSION_COOKIE = 'wnt2.cookie'
 
 #Mod by Christian Haitian starts here
-ADDON = xbmcaddon.Addon()
 #Define addon plugin directory
-Data_Dir = os.path.join(xbmcaddon.Addon().getAddonInfo('path'))
-login = ADDON.getSetting('watchnixtoons2.name')
-password = ADDON.getSetting('watchnixtoons2.password')
+if BASEURL == 'https://user.wco.tv':
+    Data_Dir = os.path.join(xbmcaddon.Addon().getAddonInfo('path'))
+    login = ADDON.getSetting('watchnixtoons2.name')
+    password = ADDON.getSetting('watchnixtoons2.password')
 # Assuming two cookies are used for persistent login.
 # (Find it by tracing the login process)
-persistentCookieNames = ['wordpress_sec_231de03aca492828e4d084c4d94c5935', 'wordpress_logged_in_231de03aca492828e4d084c4d94c5935']
-URL = 'https://user.wco.tv'
-urlData = urlparse(URL)
+    persistentCookieNames = ['wordpress_sec_231de03aca492828e4d084c4d94c5935', 'wordpress_logged_in_231de03aca492828e4d084c4d94c5935']
+    URL = 'https://user.wco.tv'
+    urlData = urlparse(URL)
 #Downloaded wco cookie will be stored addon plugin directory
-cookieFile = Data_Dir + osSeparator + urlData.netloc + '.cookie'
-signinUrl = urljoin(URL, "/wp-login.php")
+    cookieFile = Data_Dir + osSeparator + urlData.netloc + '.cookie'
+    signinUrl = urljoin(URL, "/wp-login.php")
 #Check if cookie is older than 24 hours.  If so delete, it so it can be recreated.
-if os.access(cookieFile, os.F_OK):
-	date_check = datetime.datetime.fromtimestamp(os.path.getmtime(cookieFile))
-	if datetime.datetime.now() - date_check > datetime.timedelta(hours=24):
-			os.remove(cookieFile)
+    if os.access(cookieFile, os.F_OK):
+        date_check = datetime.datetime.fromtimestamp(os.path.getmtime(cookieFile))
+        if datetime.datetime.now() - date_check > datetime.timedelta(hours=24):
+                os.remove(cookieFile)
 
 #Setup wco session with a new cookie if it does not exists.
-with requests.Session() as session:
-    try:
-        with open(cookieFile, 'rb') as f:
-            print("Loading cookies...")
-            session.cookies.update(pickle.load(f))
-    except Exception:
-        # If could not load cookies from file, get the new ones by login in
-        print("Login in...")
-        post = session.post(
-            signinUrl,
-            data={
-                'log': login,
-                'pwd': password,
-            }
-        )
+    with requests.Session() as session:
         try:
-            with open(cookieFile, 'wb') as f:
-                jar = requests.cookies.RequestsCookieJar()
-                for cookie in session.cookies:
-                    if cookie.name in persistentCookieNames:
-                        jar.set_cookie(cookie)
-                pickle.dump(jar, f)
-        except Exception as e:
-            os.remove(cookieFile)
-            raise(e)
+            with open(cookieFile, 'rb') as f:
+                print("Loading cookies...")
+                session.cookies.update(pickle.load(f))
+        except Exception:
+        # If could not load cookies from file, get the new ones by login in
+            print("Login in...")
+            post = session.post(
+                signinUrl,
+                data={
+                    'log': login,
+                    'pwd': password,
+                    }
+            )
+            try:
+                with open(cookieFile, 'wb') as f:
+                    jar = requests.cookies.RequestsCookieJar()
+                    for cookie in session.cookies:
+                        if cookie.name in persistentCookieNames:
+                            jar.set_cookie(cookie)
+                    pickle.dump(jar, f)
+            except Exception as e:
+                os.remove(cookieFile)
+                raise(e)
 #Mod by Christian Haitian ends here
 
 # Show catalog: whether to show the catalog categories or to go straight to the "ALL" section with all items visible.
@@ -325,9 +329,14 @@ def actionEpisodesMenu(params):
         listData = getWindowProperty(PROPERTY_EPISODE_LIST_DATA)
     else:
         # New domain safety replace, in case the user is coming in from an old Kodi favorite item.
-        url = params['url'].replace('user.wco.tv', 'thewatchcartoononline.tv', 1)
-        r = requestHelper(url if url.startswith('http') else BASEURL + url)
-        html = r.text
+        if BASEURL == 'https://www.thewatchcartoononline.tv':
+           url = params['url'].replace('watchcartoononline.io', 'thewatchcartoononline.tv', 1)
+           r = requestHelper(url if url.startswith('http') else BASEURL + url)
+           html = r.text
+        else:
+           url = params['url'].replace('watchcartoononline.io', 'user.wco.tv', 1)
+           r = requestHelper(url if url.startswith('http') else BASEURL + url)
+           html = r.text
 
         plot, thumb = getPageMetadata(html)
 
@@ -1270,8 +1279,14 @@ def actionResolve(params):
     url = params['url']
     # Sanitize the URL since on some occasions it's a path instead of full address.
     url = url if url.startswith('http') else (BASEURL + (url if url.startswith('/') else '/' + url))
-    r = requestHelper(url.replace('user.wco.tv', 'thewatchcartoononline.tv', 1)) # New domain safety replace.
-    content = r.content
+
+    if BASEURL == 'https://www.thewatchcartoononline.tv':
+       r = requestHelper(url.replace('watchcartoononline.io', 'thewatchcartoononline.tv', 1)) # New domain safety replace.
+       content = r.content
+    else:
+		r = requestHelper(url.replace('watchcartoononline.io', 'user.wco.tv', 1)) # New domain safety.
+		content = r.content
+
 
     def _decodeSource(subContent):
         chars = subContent[subContent.find('[') : subContent.find(']')]
@@ -1544,10 +1559,14 @@ def requestHelper(url, data=None, extraHeaders=None):
 
 #Mod by Christian Haitian starts here
 
-    if data:
+    if data == None and BASEURL == 'https://user.wco.tv':
         response = session.post(url, data=data, headers=myHeaders, verify=False, timeout=10)
-    else:
+    elif data == None and BASEURL == 'https://www.thewatchcartoononline.tv':
+        response = requests.post(url, data=data, headers=myHeaders, verify=False, cookies=cookieDict, timeout=10)
+    elif data != None and BASEURL == 'https://user.wco.tv':
         response = session.get(url, headers=myHeaders, verify=False, timeout=10)
+    else:
+        response = requests.get(url, headers=myHeaders, verify=False, cookies=cookieDict, timeout=10)
 
 #Mod by Christian Haitian starts here
 
