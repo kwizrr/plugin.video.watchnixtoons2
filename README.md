@@ -4,7 +4,7 @@
 
 You can provide your username and password from this addon's setting menu on the interface screen.  
 
-~~This plugin modification will not work unless you are premimum user on their site.~~[Fixed in version 0.4.8.3]
+~~This plugin modification will not work unless you are a premimum user on their site.~~[Fixed in version 0.4.8.3]
 
 As of the time of this readme creation, the monthly cost is $2.99 which, in my honest opinion, is very fair for the amount of available dubbed and subbed anime and cartoons this site has to offer.  
 
