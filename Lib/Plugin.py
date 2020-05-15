@@ -6,12 +6,11 @@ import json #added by Christian Haitian
 import os #added by Christian Haitian
 import pickle #added by Christian Haitian
 import datetime #added by Christian Haitian
-from urlparse import urlparse, urljoin #added by Christian Haitian
 
 from itertools import chain
 from base64 import b64decode
 from time import time, sleep
-from urlparse import parse_qsl
+from urlparse import parse_qsl, urlparse, urljoin #added by Christian Haitian
 from string import ascii_uppercase
 from urllib import quote_plus, urlencode
 from os import sep as osSeparator #added by Christian Haitian
@@ -39,7 +38,7 @@ if (not (ADDON.getSetting('watchnixtoons2.name') and not ADDON.getSetting('watch
     BASEURL = 'https://www.thewatchcartoononline.tv'
 else:
     BASEURL = 'https://user.wco.tv'
-#Mod by Christian Haitian starts here
+#Mod by Christian Haitian ends here
 
 # Due to a recent bug on the server end, the mobile URL is now only used on 'makeLatestCatalog()'.
 BASEURL_MOBILE = 'https://m.wcostream.com' # Mobile version of one of their domains (seems to be the only one).
@@ -76,11 +75,9 @@ if BASEURL == 'https://user.wco.tv':
     with requests.Session() as session:
         try:
             with open(cookieFile, 'rb') as f:
-                print("Loading cookies...")
                 session.cookies.update(pickle.load(f))
         except Exception:
         # If could not load cookies from file, get the new ones by login in
-            print("Login in...")
             post = session.post(
                 signinUrl,
                 data={
@@ -1563,7 +1560,7 @@ def requestHelper(url, data=None, extraHeaders=None):
          else:
 		     response = requests.get(url, headers=myHeaders, verify=False, cookies=cookieDict, timeout=10)
 
-#Mod by Christian Haitian starts here
+#Mod by Christian Haitian ends here
 
     # Store the session cookie(s), if any.
     if not cookieProperty and response.cookies:
