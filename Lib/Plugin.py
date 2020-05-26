@@ -330,11 +330,11 @@ def actionEpisodesMenu(params):
     else:
         # New domain safety replace, in case the user is coming in from an old Kodi favorite item.
         if BASEURL == 'https://www.thewatchcartoononline.tv':
-           url = params['url'].replace('watchcartoononline.io', 'thewatchcartoononline.tv', 1)
+           url = params['url'].replace('user.wco.tv', 'www.thewatchcartoononline.tv', 1)
            r = requestHelper(url if url.startswith('http') else BASEURL + url)
            html = r.text
         else:
-           url = params['url'].replace('watchcartoononline.io', 'user.wco.tv', 1)
+           url = params['url'].replace('www.thewatchcartoononline.tv', 'user.wco.tv', 1)
            r = requestHelper(url if url.startswith('http') else BASEURL + url)
            html = r.text
 
@@ -1335,8 +1335,8 @@ def actionResolve(params):
         mediaURL = premiumlinks[0]
     elif len(premiumlinks) > 0:
         # Allows user to select a prefered quality and double checks if the link is live.  If not, use the other link instead
-        premiumlinks0 = requests.head(str(premiumlinks[0]), timeout=10.0)
-        premiumlinks1 = requests.head(str(premiumlinks[1]), timeout=10.0)
+        premiumlinks0 = requests.head(str(premiumlinks[0]))
+        premiumlinks1 = requests.head(str(premiumlinks[1]))
         playbackMethod = ADDON.getSetting('playbackMethod')
         if playbackMethod == '0': # Select quality.
                 selectedIndex = xbmcgui.Dialog().select(
