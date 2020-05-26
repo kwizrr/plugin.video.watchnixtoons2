@@ -6,11 +6,12 @@ import json #added by Christian Haitian
 import os #added by Christian Haitian
 import pickle #added by Christian Haitian
 import datetime #added by Christian Haitian
+from urlparse import urlparse, urljoin #added by Christian Haitian
 
 from itertools import chain
 from base64 import b64decode
 from time import time, sleep
-from urlparse import parse_qsl, urlparse, urljoin #added by Christian Haitian
+from urlparse import parse_qsl
 from string import ascii_uppercase
 from urllib import quote_plus, urlencode
 from os import sep as osSeparator #added by Christian Haitian
@@ -75,9 +76,11 @@ if BASEURL == 'https://user.wco.tv':
     with requests.Session() as session:
         try:
             with open(cookieFile, 'rb') as f:
+                print("Loading cookies...")
                 session.cookies.update(pickle.load(f))
         except Exception:
         # If could not load cookies from file, get the new ones by login in
+            print("Login in...")
             post = session.post(
                 signinUrl,
                 data={
@@ -1272,11 +1275,143 @@ def getCatalogProperty(params):
 
 
 def actionResolve(params):
+#Mod by Christian Haitian starts here
+   if BASEURL == 'https://user.wco.tv':
     # Needs to be the BASEURL domain to get multiple video qualities.
     url = params['url']
     # Sanitize the URL since on some occasions it's a path instead of full address.
     url = url if url.startswith('http') else (BASEURL + (url if url.startswith('/') else '/' + url))
-    r = requestHelper(url.replace('user.wco.tv', 'thewatchcartoononline.tv', 1)) # New domain safety.
+    r = requestHelper(url.replace('watchcartoononline.io', 'user.wco.tv', 1)) # New domain safety.
+    content = r.content
+
+    def _decodeSource(subContent):
+        # All links in premium site seem to start with file, we'll search for those in the content
+        demlinks = re.findall(r'file: "(.*?)"',str(content))
+
+        try:
+            return demlinks
+
+        except:
+            return None # Probably a temporary block, or change in embedded code.
+
+    premiumlinks = re.findall(r'file: "(.*?)"',str(content))
+
+    embedURL = None
+
+    embedURLPattern = b'onclick="myFunction'
+    embedURLIndex = content.find(embedURLPattern)
+    if 'playChapters' in params or ADDON.getSetting('chapterEpisodes') == 'true':
+        # Multi-chapter episode found (that is, multiple embedURLPattern statements found).
+        # Extract all chapters from the page.
+        embedURLPatternLen = len(embedURLPattern)
+        currentPlayerIndex = embedURLIndex
+        dataIndices = [ ]
+        while currentPlayerIndex != -1:
+            dataIndices.append(currentPlayerIndex)
+            currentPlayerIndex = content.find(embedURLPattern, currentPlayerIndex + embedURLPatternLen)
+
+        # If more than one "embedURL" statement found, make a selection dialog and call them "chapters".
+        if len(dataIndices) > 1:
+            selectedIndex = xbmcgui.Dialog().select(
+                'Select Chapter', ['Chapter '+str(n) for n in xrange(1, len(dataIndices)+1)]
+            )
+        else:
+            selectedIndex = 0
+
+        if selectedIndex != -1:
+            embedURL = _decodeSource(content[dataIndices[selectedIndex]:])
+        else:
+            return # User cancelled the chapter selection.
+    else:
+        # Normal / single-chapter episode.
+        embedURL = _decodeSource(content[embedURLIndex:])
+        # User asked to play multiple chapters, but only one chapter/video player found.
+        if embedURL and 'playChapters' in params:
+            xbmcgui.Dialog().notification('WatchNixtoons2', 'Only 1 chapter found...', ADDON_ICON, 2000, False)
+
+    mediaURL = None
+
+    if len(premiumlinks) == 1: # Only one quality available.
+        mediaURL = premiumlinks[0]
+    elif len(premiumlinks) > 0:
+        # Allows user to select a prefered quality and double checks if the link is live.  If not, use the other link instead
+        premiumlinks0 = requests.head(str(premiumlinks[0]), timeout=10.0)
+        premiumlinks1 = requests.head(str(premiumlinks[1]), timeout=10.0)
+        playbackMethod = ADDON.getSetting('playbackMethod')
+        if playbackMethod == '0': # Select quality.
+                selectedIndex = xbmcgui.Dialog().select(
+                    'Select Quality', ['SD', 'HD']
+                )
+                if selectedIndex == 0:
+                    mediaURL = premiumlinks[0] if premiumlinks0 == 'Response [200]' else premiumlinks[1]
+                elif selectedIndex == -1:
+                    mediaURL = None
+                else:
+				    mediaURL = premiumlinks[1] if premiumlinks1 == 'Response [200]' else premiumlinks[0]
+        else: # Auto-play user choice.
+            if playbackMethod == '1':
+			 mediaURL = premiumlinks[1] if str(premiumlinks1) == '<Response [200]>' else premiumlinks[0]
+            else:
+             mediaURL = premiumlinks[0] if str(premiumlinks0) == '<Response [200]>' else premiumlinks[1]
+
+    if mediaURL:
+		global MEDIA_HEADERS
+		if not MEDIA_HEADERS:
+				MEDIA_HEADERS = {
+					'User-Agent': WNT2_USER_AGENT,
+					'Accept': 'video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5',
+					'Connection': 'keep-alive',
+					'Referer': BASEURL + '/'
+				}
+		mediaHead = solveMediaRedirect(mediaURL, MEDIA_HEADERS)
+		item = xbmcgui.ListItem(xbmc.getInfoLabel('ListItem.Label'))
+		item.setPath(mediaHead.url + '|' + '&'.join(key+'='+quote_plus(val) for key, val in MEDIA_HEADERS.iteritems()))
+		item.setMimeType(mediaHead.headers.get('Content-Type', 'video/mp4')) # Avoids Kodi's MIME request.
+			# When coming in from a Favourite item, there will be no metadata. Try to get at least a title.
+		itemTitle = xbmc.getInfoLabel('ListItem.Title')
+		if not itemTitle:
+				match = re.search(b'<h1[^>]+>([^<]+)</h1', content)
+				if match:
+					itemTitle = match.group(1).replace(' English Subbed', '', 1).replace( 'English Dubbed', '', 1)
+				else:
+					itemTitle = ''
+
+		episodeString = xbmc.getInfoLabel('ListItem.Episode')
+		if episodeString != '' and episodeString != '-1':
+				seasonInfoLabel = xbmc.getInfoLabel('ListItem.Season')
+				item.setInfo('video',
+					{
+						'tvshowtitle': xbmc.getInfoLabel('ListItem.TVShowTitle'),
+						'title': itemTitle,
+						'season': int(seasonInfoLabel) if seasonInfoLabel.isdigit() else -1,
+						'episode': int(episodeString),
+						'plot': xbmc.getInfoLabel('ListItem.Plot'),
+						'mediatype': 'episode'
+					}
+				)
+		else:
+				item.setInfo('video',
+					{
+						'title': itemTitle,
+						'plot': xbmc.getInfoLabel('ListItem.Plot'),
+						'mediatype': 'movie'
+					}
+				)
+
+		#xbmc.Player().play(listitem=item) # Alternative play method, lets you extend the Player class with your own.
+		xbmcplugin.setResolvedUrl(PLUGIN_ID, True, item)
+    else:
+		# Failed. No source found, or the user didn't select one from the dialog.
+		xbmcplugin.setResolvedUrl(PLUGIN_ID, False, xbmcgui.ListItem())
+	
+#Mod by Christian Haitian ends here
+
+   else:
+        # Needs to be the BASEURL domain to get multiple video qualities.
+    url = params['url']
+    # Sanitize the URL since on some occasions it's a path instead of full address.
+    url = url if url.startswith('http') else (BASEURL + (url if url.startswith('/') else '/' + url))
+    r = requestHelper(url.replace('watchcartoononline.io', 'thewatchcartoononline.tv', 1)) # New domain safety.
     content = r.content
 
     def _decodeSource(subContent):
@@ -1460,7 +1595,6 @@ def actionResolve(params):
     else:
         # Failed. No source found, or the user didn't select one from the dialog.
         xbmcplugin.setResolvedUrl(PLUGIN_ID, False, xbmcgui.ListItem())
-
 
 def buildURL(query):
     '''
