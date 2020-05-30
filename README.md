@@ -6,8 +6,8 @@ You can provide your username and password from this addon's setting menu on the
 
 ~~This plugin modification will not work unless you are a premimum user on their site.~~[Fixed in version 0.4.8.3]
 
-As of the time of this readme creation, the monthly cost is $2.99 which, in my honest opinion, is very fair for the amount of available dubbed and subbed anime and cartoons this site has to offer.  
-
-Consider becoming a member and help this site to continue.
+Premium membership is currently unavailable.
 
 # Important Note!  If you enter bad credentials or change credentials later, you will have to correct this in the settings menu on the interface section then go to the tools section and click on clear cookies.  If you don't do this, the plugin will error out.
+
+To view recent updates to this plugin see [https://github.com/christianhaitian/plugin.video.watchnixtoons2/blob/master/addon.xml]
