@@ -1354,13 +1354,15 @@ def actionResolve(params):
             else:
              mediaURL = premiumlinks[0] if str(premiumlinks0) == '<Response [200]>' else premiumlinks[1]
 
-    if mediaURL:
-		global MEDIA_HEADERS
+    MEDIA_HEADERS = None
+    premiumtest = requests.head(mediaURL)
+    if str(premiumtest) == "<Response [200]>": #Test if the premium link is accessible if not, let's try the free version.
 		if not MEDIA_HEADERS:
 				MEDIA_HEADERS = {
 					'User-Agent': WNT2_USER_AGENT,
 					'Accept': 'video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5',
 					'Connection': 'keep-alive',
+					'Verifypeer': 'false',
 					'Referer': BASEURL + '/'
 				}
 		mediaHead = solveMediaRedirect(mediaURL, MEDIA_HEADERS)
@@ -1400,6 +1402,190 @@ def actionResolve(params):
 
 		#xbmc.Player().play(listitem=item) # Alternative play method, lets you extend the Player class with your own.
 		xbmcplugin.setResolvedUrl(PLUGIN_ID, True, item)
+    elif '/inc/embed' in content: #Premium link failed so we'll try the free version now.
+     xbmcgui.Dialog().notification('Trying free stream', '')
+     r = requestHelper(url.replace('user.wco.tv', 'www.thewatchcartoononline.tv', 1)) # Change from premium site to free site
+     content = r.content
+
+     def _decodeSource(subContent):
+        chars = subContent[subContent.find('[') : subContent.find(']')]
+        spread = int(re.search(r' - (\d+)\)\; }', subContent[subContent.find(' - '):]).group(1))
+        iframe = ''.join(
+            chr(
+                int(''.join(c for c in b64decode(char) if c.isdigit())) - spread
+            )
+            for char in chars.replace('"', '').split(',')
+        )
+        try:
+            return BASEURL + re.search(r'src="([^"]+)', iframe).group(1)
+        except:
+            return None # Probably a temporary block, or change in embedded code.
+
+     embedURL = None
+
+     # On rare cases an episode might have several "chapters", which are video players on the page.
+     embedURLPattern = b'onclick="myFunction'
+     embedURLIndex = content.find(embedURLPattern)
+     if 'playChapters' in params or ADDON.getSetting('chapterEpisodes') == 'true':
+        # Multi-chapter episode found (that is, multiple embedURLPattern statements found).
+        # Extract all chapters from the page.
+        embedURLPatternLen = len(embedURLPattern)
+        currentPlayerIndex = embedURLIndex
+        dataIndices = [ ]
+        while currentPlayerIndex != -1:
+            dataIndices.append(currentPlayerIndex)
+            currentPlayerIndex = content.find(embedURLPattern, currentPlayerIndex + embedURLPatternLen)
+
+        # If more than one "embedURL" statement found, make a selection dialog and call them "chapters".
+        if len(dataIndices) > 1:
+            selectedIndex = xbmcgui.Dialog().select(
+                'Select Chapter', ['Chapter '+str(n) for n in xrange(1, len(dataIndices)+1)]
+            )
+        else:
+            selectedIndex = 0
+
+        if selectedIndex != -1:
+            embedURL = _decodeSource(content[dataIndices[selectedIndex]:])
+        else:
+            return # User cancelled the chapter selection.
+     else:
+        # Normal / single-chapter episode.
+        embedURL = _decodeSource(content[embedURLIndex:])
+        # User asked to play multiple chapters, but only one chapter/video player found.
+        if embedURL and 'playChapters' in params:
+            xbmcgui.Dialog().notification('WatchNixtoons2', 'Only 1 chapter found...', ADDON_ICON, 2000, False)
+
+     # Handle temporary blocks / failures.
+     if not embedURL:
+        if 'high volume of requests' in content:
+            xbmcgui.Dialog().ok(
+                'WatchNixtoons2 Fail (Server Response)',
+                '"We are getting extremely high volume of requests on our video servers so that we temporarily block for free videos for free users. I apologize for the inconvenience."'
+            )
+        return
+
+     # Request the embedded player page.
+     r2 = requestHelper(unescapeHTMLText(embedURL)) # Sometimes a '&#038;' symbol is present in this URL.
+     html = r2.text
+
+     # Find the stream URLs.
+     if 'getvid?evid' in html:
+        # Query-style stream getting.
+        sourceURL = re.search(b'"(/inc/embed/getvidlink[^"]+)', html, re.DOTALL).group(1)
+
+        # Inline code similar to 'requestHelper()'.
+        # The User-Agent for this next request is somehow encoded into the media tokens, so we make sure to use
+        # the EXACT SAME value later, when playing the media, or else we get a HTTP 404 / 500 error.
+        r3 = requestHelper(
+            BASEURL + sourceURL,
+            data = None,
+            extraHeaders = {
+                'User-Agent': WNT2_USER_AGENT, 'Accept': '*/*', 'Referer': embedURL, 'X-Requested-With': 'XMLHttpRequest'
+            }
+        )
+        if not r3.ok:
+            raise Exception('Sources XMLHttpRequest request failed')
+        jsonData = r3.json()
+
+        # Only two qualities are ever available: 480p ("SD") and 720p ("HD").
+        sourceURLs = [ ]
+        sdToken = jsonData.get('enc', '')
+        hdToken = jsonData.get('hd', '')
+        sourceBaseURL = jsonData.get('server', '') + '/getvid?evid='
+        if sdToken:
+            sourceURLs.append(('480 (SD)', sourceBaseURL + sdToken)) # Order the items as (LABEL, URL).
+        if hdToken:
+            sourceURLs.append(('720 (HD)', sourceBaseURL + hdToken))
+        # Use the same backup stream method as the source: cdn domain + SD stream.
+        backupURL = jsonData.get('cdn', '') + '/getvid?evid=' + (sdToken or hdToken)
+     else:
+        # Alternative video player page, with plain stream links in the JWPlayer javascript.
+        sourcesBlock = re.search('sources:\s*?\[(.*?)\]', html, re.DOTALL).group(1)
+        streamPattern = re.compile('\{\s*?file:\s*?"(.*?)"(?:,\s*?label:\s*?"(.*?)")?')
+        sourceURLs = [
+            # Order the items as (LABEL (or empty string), URL).
+            (sourceMatch.group(2), sourceMatch.group(1))
+            for sourceMatch in streamPattern.finditer(sourcesBlock)
+        ]
+        # Use the backup link in the 'onError' handler of the 'jw' player.
+        backupMatch = streamPattern.search(html[html.find(b'jw.onError'):])
+        backupURL = backupMatch.group(1) if backupMatch else ''
+
+     mediaURL = None
+     if len(sourceURLs) == 1: # Only one quality available.
+        mediaURL = sourceURLs[0][1]
+     elif len(sourceURLs) > 0:
+        # Always force "select quality" for now.
+        playbackMethod = ADDON.getSetting('playbackMethod')
+        if playbackMethod == '0': # Select quality.
+                selectedIndex = xbmcgui.Dialog().select(
+                    'Select Quality', [(sourceItem[0] or '?') for sourceItem in sourceURLs]
+                )
+                if selectedIndex != -1:
+                    mediaURL = sourceURLs[selectedIndex][1]
+        else: # Auto-play user choice.
+            sortedSources = sorted(sourceURLs)
+            mediaURL = sortedSources[-1][1] if playbackMethod == '1' else sortedSources[0][1]
+
+     if mediaURL:
+        # Kodi headers for playing web streamed media.
+        global MEDIA_HEADERS
+        if not MEDIA_HEADERS:
+            MEDIA_HEADERS = {
+                'User-Agent': WNT2_USER_AGENT,
+                'Accept': 'video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5',
+                'Connection': 'keep-alive',
+                'Verifypeer': 'false',
+                'Referer': BASEURL + '/'
+            }
+
+        # Try to un-redirect the chosen media URL.
+        # If it fails, try to un-resolve the backup URL. If not even the backup URL is working, abort playing.
+        mediaHead = solveMediaRedirect(mediaURL, MEDIA_HEADERS)
+        if not mediaHead:
+            mediaHead = solveMediaRedirect(backupURL, MEDIA_HEADERS)
+        if not mediaHead:
+            return xbmcplugin.setResolvedUrl(PLUGIN_ID, False, xbmcgui.ListItem())
+
+        # Need to use the exact same ListItem name & infolabels when playing or else Kodi replaces that item
+        # in the UI listing.
+        item = xbmcgui.ListItem(xbmc.getInfoLabel('ListItem.Label'))
+        item.setPath(mediaHead.url + '|' + '&'.join(key+'='+quote_plus(val) for key, val in MEDIA_HEADERS.iteritems()))
+        item.setMimeType(mediaHead.headers.get('Content-Type', 'video/mp4')) # Avoids Kodi's MIME request.
+
+        # When coming in from a Favourite item, there will be no metadata. Try to get at least a title.
+        itemTitle = xbmc.getInfoLabel('ListItem.Title')
+        if not itemTitle:
+            match = re.search(b'<h1[^>]+>([^<]+)</h1', content)
+            if match:
+                itemTitle = match.group(1).replace(' English Subbed', '', 1).replace( 'English Dubbed', '', 1)
+            else:
+                itemTitle = ''
+
+        episodeString = xbmc.getInfoLabel('ListItem.Episode')
+        if episodeString != '' and episodeString != '-1':
+            seasonInfoLabel = xbmc.getInfoLabel('ListItem.Season')
+            item.setInfo('video',
+                {
+                    'tvshowtitle': xbmc.getInfoLabel('ListItem.TVShowTitle'),
+                    'title': itemTitle,
+                    'season': int(seasonInfoLabel) if seasonInfoLabel.isdigit() else -1,
+                    'episode': int(episodeString),
+                    'plot': xbmc.getInfoLabel('ListItem.Plot'),
+                    'mediatype': 'episode'
+                }
+            )
+        else:
+            item.setInfo('video',
+                {
+                    'title': itemTitle,
+                    'plot': xbmc.getInfoLabel('ListItem.Plot'),
+                    'mediatype': 'movie'
+                }
+            )
+
+        #xbmc.Player().play(listitem=item) # Alternative play method, lets you extend the Player class with your own.
+        xbmcplugin.setResolvedUrl(PLUGIN_ID, True, item)
     else:
 		# Failed. No source found, or the user didn't select one from the dialog.
 		xbmcplugin.setResolvedUrl(PLUGIN_ID, False, xbmcgui.ListItem())
@@ -1542,6 +1728,7 @@ def actionResolve(params):
                 'User-Agent': WNT2_USER_AGENT,
                 'Accept': 'video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5',
                 'Connection': 'keep-alive',
+                'Verifypeer': 'false',
                 'Referer': BASEURL + '/'
             }
 
