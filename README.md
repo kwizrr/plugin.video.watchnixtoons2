@@ -10,4 +10,4 @@ Premium membership is currently unavailable.
 
 # Important Note!  If you enter bad credentials or change credentials later, you will have to correct this in the settings menu on the interface section then go to the tools section and click on clear cookies.  If you don't do this, the plugin will error out.
 
-[To view recent updates to this plugin see this addons.xml file](..blob/master/addon.xml).
+To view recent updates to this plugin see this [addon.xml](https://github.com/christianhaitian/plugin.video.watchnixtoons2/blob/master/addon.xml).
