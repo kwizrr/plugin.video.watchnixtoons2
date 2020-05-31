@@ -1335,8 +1335,15 @@ def actionResolve(params):
         mediaURL = premiumlinks[0]
     elif len(premiumlinks) > 0:
         # Allows user to select a prefered quality and double checks if the link is live.  If not, use the other link instead
-        premiumlinks0 = requests.head(str(premiumlinks[0]))
-        premiumlinks1 = requests.head(str(premiumlinks[1]))
+        try:
+            premiumlinks0 = requests.head(str(premiumlinks[0]), timeout=10)
+        except requests.exceptions.RequestException as error:
+            premiumlinks0 = error
+        try:
+            premiumlinks1 = requests.head(str(premiumlinks[1]), timeout=10)
+        except requests.exceptions.RequestException as error:
+            premiumlinks1 = error
+
         playbackMethod = ADDON.getSetting('playbackMethod')
         if playbackMethod == '0': # Select quality.
                 selectedIndex = xbmcgui.Dialog().select(
@@ -1355,7 +1362,11 @@ def actionResolve(params):
              mediaURL = premiumlinks[0] if str(premiumlinks0) == '<Response [200]>' else premiumlinks[1]
 
     MEDIA_HEADERS = None
-    premiumtest = requests.head(mediaURL)
+    try:
+        premiumtest = requests.head(mediaURL, timeout=10)
+    except requests.exceptions.RequestException as error:
+        premiumtest = error
+#    premiumtest = requests.head(mediaURL, timeout=1)
     if str(premiumtest) == "<Response [200]>": #Test if the premium link is accessible if not, let's try the free version.
 		if not MEDIA_HEADERS:
 				MEDIA_HEADERS = {
@@ -1517,15 +1528,16 @@ def actionResolve(params):
      elif len(sourceURLs) > 0:
         # Always force "select quality" for now.
         playbackMethod = ADDON.getSetting('playbackMethod')
-        if playbackMethod == '0': # Select quality.
-                selectedIndex = xbmcgui.Dialog().select(
-                    'Select Quality', [(sourceItem[0] or '?') for sourceItem in sourceURLs]
-                )
-                if selectedIndex != -1:
-                    mediaURL = sourceURLs[selectedIndex][1]
-        else: # Auto-play user choice.
-            sortedSources = sorted(sourceURLs)
-            mediaURL = sortedSources[-1][1] if playbackMethod == '1' else sortedSources[0][1]
+#        if playbackMethod == '0': # Select quality.
+#                selectedIndex = xbmcgui.Dialog().select(
+#                    'Select Quality', [(sourceItem[0] or '?') for sourceItem in sourceURLs]
+#                )
+#                if selectedIndex != -1:
+#                    mediaURL = sourceURLs[selectedIndex][1]
+#        else: # Auto-play user choice.
+#            sortedSources = sorted(sourceURLs)
+#            mediaURL = sortedSources[-1][1] if playbackMethod == '1' else sortedSources[0][1]
+        mediaURL = sourceURLs[0][1]
 
      if mediaURL:
         # Kodi headers for playing web streamed media.
