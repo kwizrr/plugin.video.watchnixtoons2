@@ -4,7 +4,7 @@ import sys
 import requests
 import json #added by Christian Haitian
 import os #added by Christian Haitian
-import pickle #added by Christian Haitian
+import cPickle as pickle #added by Christian Haitian
 import datetime #added by Christian Haitian
 from urlparse import urlparse, urljoin #added by Christian Haitian
 
@@ -76,11 +76,9 @@ if BASEURL == 'https://user.wco.tv':
     with requests.Session() as session:
         try:
             with open(cookieFile, 'rb') as f:
-                print("Loading cookies...")
                 session.cookies.update(pickle.load(f))
         except Exception:
         # If could not load cookies from file, get the new ones by login in
-            print("Login in...")
             post = session.post(
                 signinUrl,
                 data={
@@ -1354,10 +1352,10 @@ def actionResolve(params):
                 elif selectedIndex == -1:
                     mediaURL = None
                 else:
-				    mediaURL = premiumlinks[1] if premiumlinks1 == 'Response [200]' else premiumlinks[0]
+                    mediaURL = premiumlinks[1] if premiumlinks1 == 'Response [200]' else premiumlinks[0]
         else: # Auto-play user choice.
             if playbackMethod == '1':
-			 mediaURL = premiumlinks[1] if str(premiumlinks1) == '<Response [200]>' else premiumlinks[0]
+             mediaURL = premiumlinks[1] if str(premiumlinks1) == '<Response [200]>' else premiumlinks[0]
             else:
              mediaURL = premiumlinks[0] if str(premiumlinks0) == '<Response [200]>' else premiumlinks[1]
 
@@ -1368,31 +1366,31 @@ def actionResolve(params):
         premiumtest = error
 #    premiumtest = requests.head(mediaURL, timeout=1)
     if str(premiumtest) == "<Response [200]>": #Test if the premium link is accessible if not, let's try the free version.
-		if not MEDIA_HEADERS:
-				MEDIA_HEADERS = {
+        if not MEDIA_HEADERS:
+                MEDIA_HEADERS = {
 					'User-Agent': WNT2_USER_AGENT,
 					'Accept': 'video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5',
 					'Connection': 'keep-alive',
 					'Verifypeer': 'false',
 					'Referer': BASEURL + '/'
 				}
-		mediaHead = solveMediaRedirect(mediaURL, MEDIA_HEADERS)
-		item = xbmcgui.ListItem(xbmc.getInfoLabel('ListItem.Label'))
-		item.setPath(mediaHead.url + '|' + '&'.join(key+'='+quote_plus(val) for key, val in MEDIA_HEADERS.iteritems()))
-		item.setMimeType(mediaHead.headers.get('Content-Type', 'video/mp4')) # Avoids Kodi's MIME request.
+        mediaHead = solveMediaRedirect(mediaURL, MEDIA_HEADERS)
+        item = xbmcgui.ListItem(xbmc.getInfoLabel('ListItem.Label'))
+        item.setPath(mediaHead.url + '|' + '&'.join(key+'='+quote_plus(val) for key, val in MEDIA_HEADERS.iteritems()))
+        item.setMimeType(mediaHead.headers.get('Content-Type', 'video/mp4')) # Avoids Kodi's MIME request.
 			# When coming in from a Favourite item, there will be no metadata. Try to get at least a title.
-		itemTitle = xbmc.getInfoLabel('ListItem.Title')
-		if not itemTitle:
-				match = re.search(b'<h1[^>]+>([^<]+)</h1', content)
-				if match:
-					itemTitle = match.group(1).replace(' English Subbed', '', 1).replace( 'English Dubbed', '', 1)
-				else:
-					itemTitle = ''
+        itemTitle = xbmc.getInfoLabel('ListItem.Title')
+        if not itemTitle:
+                match = re.search(b'<h1[^>]+>([^<]+)</h1', content)
+                if match:
+                    itemTitle = match.group(1).replace(' English Subbed', '', 1).replace( 'English Dubbed', '', 1)
+                else:
+                    itemTitle = ''
 
-		episodeString = xbmc.getInfoLabel('ListItem.Episode')
-		if episodeString != '' and episodeString != '-1':
-				seasonInfoLabel = xbmc.getInfoLabel('ListItem.Season')
-				item.setInfo('video',
+        episodeString = xbmc.getInfoLabel('ListItem.Episode')
+        if episodeString != '' and episodeString != '-1':
+                seasonInfoLabel = xbmc.getInfoLabel('ListItem.Season')
+                item.setInfo('video',
 					{
 						'tvshowtitle': xbmc.getInfoLabel('ListItem.TVShowTitle'),
 						'title': itemTitle,
@@ -1402,8 +1400,8 @@ def actionResolve(params):
 						'mediatype': 'episode'
 					}
 				)
-		else:
-				item.setInfo('video',
+        else:
+                item.setInfo('video',
 					{
 						'title': itemTitle,
 						'plot': xbmc.getInfoLabel('ListItem.Plot'),
@@ -1412,7 +1410,7 @@ def actionResolve(params):
 				)
 
 		#xbmc.Player().play(listitem=item) # Alternative play method, lets you extend the Player class with your own.
-		xbmcplugin.setResolvedUrl(PLUGIN_ID, True, item)
+        xbmcplugin.setResolvedUrl(PLUGIN_ID, True, item)
     elif '/inc/embed' in content: #Premium link failed so we'll try the free version now.
      xbmcgui.Dialog().notification('Trying free stream', '')
      r = requestHelper(url.replace('user.wco.tv', 'www.thewatchcartoononline.tv', 1)) # Change from premium site to free site
@@ -1523,11 +1521,11 @@ def actionResolve(params):
         backupURL = backupMatch.group(1) if backupMatch else ''
 
      mediaURL = None
-     if len(sourceURLs) == 1: # Only one quality available.
+     if len(sourceURLs) >= 1: # Just want the SD quality as server may be busy.
         mediaURL = sourceURLs[0][1]
-     elif len(sourceURLs) > 0:
+#     elif len(sourceURLs) > 0:
         # Always force "select quality" for now.
-        playbackMethod = ADDON.getSetting('playbackMethod')
+#        playbackMethod = ADDON.getSetting('playbackMethod')
 #        if playbackMethod == '0': # Select quality.
 #                selectedIndex = xbmcgui.Dialog().select(
 #                    'Select Quality', [(sourceItem[0] or '?') for sourceItem in sourceURLs]
@@ -1537,7 +1535,7 @@ def actionResolve(params):
 #        else: # Auto-play user choice.
 #            sortedSources = sorted(sourceURLs)
 #            mediaURL = sortedSources[-1][1] if playbackMethod == '1' else sortedSources[0][1]
-        mediaURL = sourceURLs[0][1]
+#        mediaURL = sourceURLs[0][1]
 
      if mediaURL:
         # Kodi headers for playing web streamed media.
@@ -1600,7 +1598,7 @@ def actionResolve(params):
         xbmcplugin.setResolvedUrl(PLUGIN_ID, True, item)
     else:
 		# Failed. No source found, or the user didn't select one from the dialog.
-		xbmcplugin.setResolvedUrl(PLUGIN_ID, False, xbmcgui.ListItem())
+        xbmcplugin.setResolvedUrl(PLUGIN_ID, False, xbmcgui.ListItem())
 	
 #Mod by Christian Haitian ends here
 
@@ -1889,9 +1887,9 @@ def requestHelper(url, data=None, extraHeaders=None):
         response = requests.post(url, data=data, headers=myHeaders, verify=False, cookies=cookieDict, timeout=10)
     else:
          if BASEURL == 'https://user.wco.tv': 
-		     response = session.get(url, headers=myHeaders, verify=False, timeout=10)
+             response = session.get(url, headers=myHeaders, verify=False, timeout=10)
          else:
-		     response = requests.get(url, headers=myHeaders, verify=False, cookies=cookieDict, timeout=10)
+             response = requests.get(url, headers=myHeaders, verify=False, cookies=cookieDict, timeout=10)
 
 #Mod by Christian Haitian ends here
 
