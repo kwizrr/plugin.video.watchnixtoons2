@@ -908,8 +908,8 @@ def unescapeHTMLText(text):
     # Unescape HTML entities.
     if r'&#' in text:
         # Strings found by regex-searching on all lists in the source website. It's very likely to only be these.
-        return text.replace(r'&#8216;', '‘').replace(r'&#8221;', '”').replace(r'&#8211;', '–').replace(r'&#038;', '&')\
-        .replace(r'&#8217;', '’').replace(r'&#8220;', '“').replace(r'&#8230;', '…').replace(r'&#160;', ' ')\
+        return text.replace(r'&#8216;', 'â€˜').replace(r'&#8221;', 'â€').replace(r'&#8211;', 'â€“').replace(r'&#038;', '&')\
+        .replace(r'&#8217;', 'â€™').replace(r'&#8220;', 'â€œ').replace(r'&#8230;', 'â€¦').replace(r'&#160;', ' ')\
         .replace(r'&amp;', '&')
     else:
         return text.replace(r'&amp;', '&')
@@ -933,12 +933,12 @@ def getTitleInfo(unescapedTitle):
             if season == 'Episode':
                 # Find the word to the left of "Season ", separated by spaces (spaces not included in the result).
                 season = unescapedTitle[unescapedTitle.rfind(' ', 0, seasonIndex-1) + 1 : seasonIndex-1]
-                showTitle = unescapedTitle[:seasonIndex+7].strip(' -–:') # Include the "nth Season" term in the title.
+                showTitle = unescapedTitle[:seasonIndex+7].strip(' -â€“:') # Include the "nth Season" term in the title.
             else:
-                showTitle = unescapedTitle[:seasonIndex].strip(' -–:')
+                showTitle = unescapedTitle[:seasonIndex].strip(' -â€“:')
             season = {'second': '2', 'third': '3', 'fourth': '4', 'fifth': '5'}.get(season.lower(), '')
         else:
-            showTitle = unescapedTitle[:seasonIndex].strip(' -–:')
+            showTitle = unescapedTitle[:seasonIndex].strip(' -â€“:')
 
     episodeIndex = unescapedTitle.find(' Episode ') # 9 characters long.
     if episodeIndex != -1:
@@ -951,9 +951,9 @@ def getTitleInfo(unescapedTitle):
             # Get the episode title string (stripped of spaces, hyphens and en-dashes).
             englishIndex = unescapedTitle.rfind(' English', spaceIndex)
             if englishIndex != -1:
-                episodeTitle = unescapedTitle[spaceIndex+1 : englishIndex].strip(' -–:')
+                episodeTitle = unescapedTitle[spaceIndex+1 : englishIndex].strip(' -â€“:')
             else:
-                episodeTitle = unescapedTitle[spaceIndex+1:].strip(' -–:')
+                episodeTitle = unescapedTitle[spaceIndex+1:].strip(' -â€“:')
             # Safeguard for when season 1 is ocasionally omitted in the title.
             if not season:
                 season = '1'
@@ -1833,7 +1833,7 @@ def getThumbnailHeaders():
     # Since it's a constant value, it can be precomputed.
     return '|User-Agent=Mozilla%2F5.0+%28compatible%3B+WatchNixtoons2%2F0.4.1%3B' \
     '+%2Bhttps%3A%2F%2Fgithub.com%2Fdoko-desuka%2Fplugin.video.watchnixtoons2%29' \
-    '&Accept=image%2Fwebp%2C%2A%2F%2A&Referer=https%3A%2F%2Fwww.thewatchcartoononline.tv%2F' + cookies
+    '&Verifypeer=false&Accept=image%2Fwebp%2C%2A%2F%2A&Referer=https%3A%2F%2Fwww.thewatchcartoononline.tv%2F' + cookies
 
 
 def getOldDomains():
@@ -1862,6 +1862,7 @@ def requestHelper(url, data=None, extraHeaders=None):
     myHeaders = {
         'User-Agent': WNT2_USER_AGENT,
         'Accept': 'text/html,application/xhtml+xml,application/xml,application/json;q=0.9,image/webp,*/*;q=0.8',
+        'Verifypeer': 'false',
         'Accept-Language': 'en-US,en;q=0.5',
         'Cache-Control': 'no-cache',
         'Pragma': 'no-cache',
