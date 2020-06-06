@@ -107,7 +107,8 @@ ADDON_LATEST_THUMBS = ADDON.getSetting('showLatestThumbs') == 'true'
 # Use poster images for each catalog folder. Makes for a better experience on custom Kodi skins.
 ADDON_CATALOG_THUMBS = ADDON.getSetting('showCatalogThumbs') == 'true'
 ADDON_ICON = ADDON.getAddonInfo('icon')
-ADDON_ICON_DICT = {'icon': ADDON_ICON, 'thumb': ADDON_ICON, 'poster': ADDON_ICON}
+ADDON_FANART = os.path.join(xbmcaddon.Addon().getAddonInfo('path')) + osSeparator + 'fanart.jpg'
+ADDON_ICON_DICT = {'icon': ADDON_ICON, 'thumb': ADDON_ICON, 'poster': ADDON_ICON, 'fanart': ADDON_FANART}
 ADDON_TRAKT_ICON = 'special://home/addons/plugin.video.watchnixtoons2/resources/traktIcon.png'
 
 # To let the source website know it's this plugin. Also used inside "makeLatestCatalog()" and "actionResolve()".
@@ -172,7 +173,7 @@ def actionCatalogMenu(params):
                 # these images don't have to be distributed w/ the add-on, if they're not needed).
                 # After they're downloaded, the images exist in Kodi's image cache folders.
                 THUMBS_BASEURL = 'https://doko-desuka.github.io/128h/'
-                artDict = {'thumb': None}
+                artDict = {'thumb': None, 'fanart': ADDON_FANART}
                 miscItem = None
                 for sectionName in sorted(catalog.iterkeys()):
                     if catalog[sectionName]:
@@ -254,7 +255,7 @@ def actionCatalogSection(params):
     if path != URL_PATHS['latest'] or not ADDON_LATEST_THUMBS:
         artDict = {'icon': thumb, 'thumb': thumb, 'poster': thumb} if thumb else None
     else:
-        artDict = {'icon': thumb, 'thumb': 'DefaultVideo.png', 'poster': 'DefaultVideo.png'} if thumb else None
+        artDict = {'icon': thumb, 'thumb': 'DefaultVideo.png', 'poster': 'DefaultVideo.png', 'fanart': thumb} if thumb else None
 
     # Persistent property with item metadata, used with the "Show Information" context menu.
     infoItems = getWindowProperty(PROPERTY_INFO_ITEMS) or { }
@@ -299,7 +300,7 @@ def actionCatalogSection(params):
                 entryURL = entry[0]
                 if entryURL in infoItems:
                     itemPlot, itemThumb = infoItems[entryURL]
-                    entryArt = {'icon': ADDON_ICON, 'thumb': itemThumb, 'poster': itemThumb}
+                    entryArt = {'icon': ADDON_ICON, 'thumb': itemThumb, 'poster': itemThumb, 'fanart': itemThumb}
                     yield (
                         buildURL({'action': action, 'url': entryURL}),
                         listItemFunc(entry[1], entryURL, entryArt, itemPlot, isFolder, isSpecial, None),
@@ -362,7 +363,7 @@ def actionEpisodesMenu(params):
 
         showURL = params['url']
         thumb = listData[0]
-        artDict = {'icon': thumb, 'thumb': thumb, 'poster': thumb} if thumb else None
+        artDict = {'icon': thumb, 'thumb': thumb, 'poster': thumb, 'fanart': thumb} if thumb else None
         plot = listData[1]
 
         listItemFunc = makeListItemClean if ADDON.getSetting('cleanupEpisodes') == 'true' else makeListItem
@@ -399,7 +400,7 @@ def actionLatestMoviesMenu(params):
     infoItems = getWindowProperty(PROPERTY_INFO_ITEMS) or { }
 
     def _movieItemsGen():
-        artDict = {'icon': ADDON_ICON, 'thumb': ADDON_ICON, 'poster': ADDON_ICON}
+        artDict = {'icon': ADDON_ICON, 'thumb': ADDON_ICON, 'poster': ADDON_ICON, 'fanart': ADDON_FANART}
         reIter = re.finditer(
             '''<a href="([^"]+).*?>([^<]+)''', html[dataStartIndex : html.find('"sidebar-all"')]
         )
@@ -413,7 +414,7 @@ def actionLatestMoviesMenu(params):
                     makeListItem(
                         unescapeHTMLText(entryTitle),
                         entryURL,
-                        {'icon': ADDON_ICON, 'thumb': entryThumb, 'poster': entryThumb},
+                        {'icon': ADDON_ICON, 'thumb': entryThumb, 'poster': entryThumb, 'fanart': ADDON_FANART},
                         entryPlot,
                         isFolder = False,
                         isSpecial = True,
