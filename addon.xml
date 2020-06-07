@@ -13,7 +13,7 @@
 
 [B]0.4.9.4[/B]
 - Added a workaround for situations where a latest release is not available on the premium site but is on the free site.
-- Fix chapter selection for episodes with multiple chapters on the premium site.
+- Fixed chapter selection for episodes with multiple chapters on the premium site.
             
 [B]0.4.9.3[/B]
 - Add the ability to automatically load art while searching through content.
