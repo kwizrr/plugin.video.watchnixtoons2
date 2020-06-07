@@ -1325,14 +1325,14 @@ def actionResolve(params):
             return # User cancelled the chapter selection.
     else:
         # Normal / single-chapter episode.
-        embedURL = _decodeSource(content[embedURLIndex:])
+        embedURL = re.findall(r'file: "(.*?)"',str(content))  
         # User asked to play multiple chapters, but only one chapter/video player found.
         if embedURL and 'playChapters' in params:
             xbmcgui.Dialog().notification('WatchNixtoons2', 'Only 1 chapter found...', ADDON_ICON, 2000, False)
 
     premiumlinks = embedURL
     mediaURL = None
-
+	
     if len(premiumlinks) == 1: # Only one quality available.
         mediaURL = premiumlinks[0]
     elif len(premiumlinks) > 0:
