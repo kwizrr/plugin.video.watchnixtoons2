@@ -1332,17 +1332,17 @@ def actionResolve(params):
 
     premiumlinks = embedURL
     mediaURL = None
-	
+
     if len(premiumlinks) == 1: # Only one quality available.
         mediaURL = premiumlinks[0]
     elif len(premiumlinks) > 0:
         # Allows user to select a prefered quality and double checks if the link is live.  If not, use the other link instead
         try:
-            premiumlinks0 = requests.head(str(premiumlinks[0]), timeout=10)
+            premiumlinks0 = requests.head(str(premiumlinks[0]), timeout=10, allow_redirects=True)
         except requests.exceptions.RequestException as error:
             premiumlinks0 = error
         try:
-            premiumlinks1 = requests.head(str(premiumlinks[1]), timeout=10)
+            premiumlinks1 = requests.head(str(premiumlinks[1]), timeout=10, allow_redirects=True)
         except requests.exceptions.RequestException as error:
             premiumlinks1 = error
 
@@ -1554,7 +1554,7 @@ def actionResolve(params):
 
     MEDIA_HEADERS = None
     try:
-        premiumtest = requests.head(mediaURL, timeout=10)
+        premiumtest = requests.head(mediaURL, timeout=10, allow_redirects=True)
     except requests.exceptions.RequestException as error:
         premiumtest = error
 #    premiumtest = requests.head(mediaURL, timeout=1)
