@@ -6,7 +6,7 @@ You can provide your username and password from this addon's setting menu on the
 
 ~~This plugin modification will not work unless you are a premimum user on their site.~~[Fixed in version 0.4.8.3]
 
-Premium membership is currently unavailable.
+~~Premium membership is currently unavailable.~~ [Available again as of 10/27/2020]
 
 # Important Note!  If you enter bad credentials or change credentials later, you will have to correct this in the settings menu on the interface section then go to the tools section and click on clear cookies.  If you don't do this, the plugin will error out.
 
