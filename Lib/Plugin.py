@@ -1338,11 +1338,11 @@ def actionResolve(params):
     elif len(premiumlinks) > 0:
         # Allows user to select a prefered quality and double checks if the link is live.  If not, use the other link instead
         try:
-            premiumlinks0 = requests.head(str(premiumlinks[0]), timeout=10, allow_redirects=True)
+            premiumlinks0 = requests.head(str(premiumlinks[0]), headers={'User-Agent': WNT2_USER_AGENT, 'Verifypeer': 'false', 'Referer': BASEURL + '/'}, timeout=10, allow_redirects=True)
         except requests.exceptions.RequestException as error:
             premiumlinks0 = error
         try:
-            premiumlinks1 = requests.head(str(premiumlinks[1]), timeout=10, allow_redirects=True)
+            premiumlinks1 = requests.head(str(premiumlinks[1]), headers={'User-Agent': WNT2_USER_AGENT, 'Verifypeer': 'false', 'Referer': BASEURL + '/'}, timeout=10, allow_redirects=True)
         except requests.exceptions.RequestException as error:
             premiumlinks1 = error
 
