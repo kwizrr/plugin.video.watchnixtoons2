@@ -1554,7 +1554,7 @@ def actionResolve(params):
 
     MEDIA_HEADERS = None
     try:
-        premiumtest = requests.head(mediaURL, timeout=10, allow_redirects=True)
+        premiumtest = requests.head(mediaURL, headers={'User-Agent': WNT2_USER_AGENT, 'Verifypeer': 'false', 'Referer': BASEURL + '/'}, timeout=10, allow_redirects=True)
     except requests.exceptions.RequestException as error:
         premiumtest = error
 #    premiumtest = requests.head(mediaURL, timeout=1)
