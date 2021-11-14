@@ -127,9 +127,7 @@ class SimpleTrakt():
             progressDialog = xbmcgui.DialogProgress()
             progressDialog.create(
                 'Trakt Activation',
-                'Go to [B]' + jsonData['verification_url'] + '[/B] and enter this code:',
-                '[COLOR aquamarine][B]' + jsonData['user_code'] + '[/B][/COLOR]',
-                'Time left:'
+                'Go to [B]' + jsonData['verification_url'] + '[/B] and enter this code:[COLOR aquamarine][B]' + jsonData['user_code'] + '[/B][/COLOR] Time left:'
             )
 
             pollData = {
@@ -138,11 +136,11 @@ class SimpleTrakt():
                 'client_secret': self.CLIENT_SECRET
             }
 
-            for s in xrange(totalTime):
+            for s in range(totalTime):
                 if progressDialog.iscanceled():
                     break
                 percentage = int(s / float(totalTime) * 100.0)
-                progressDialog.update(percentage, line3='Time left: [B]' + str(totalTime - s) + '[/B] seconds')
+                progressDialog.update(percentage, 'Go to [B]' + jsonData['verification_url'] + '[/B] and enter this code:[COLOR aquamarine][B]' + jsonData['user_code'] + '[/B][/COLOR] Time left: [B]' + str(totalTime - s) + '[/B] seconds')
 
                 if not (s % interval):
                     r2 = self._traktRequest('/oauth/device/token', pollData)
