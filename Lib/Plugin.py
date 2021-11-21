@@ -28,6 +28,8 @@ import xbmc
 import xbmcgui
 import xbmcaddon
 import xbmcplugin
+if six.PY3:
+  xrange=range
 
 from Lib.Common import *
 from Lib.SimpleTrakt import SimpleTrakt
@@ -44,7 +46,7 @@ PLUGIN_URL = sys.argv[0]
 #Mod by Christian Haitian starts here
 ADDON = xbmcaddon.Addon()
 if (not (ADDON.getSetting('watchnixtoons2.name') and not ADDON.getSetting('watchnixtoons2.name').isspace())):
-    BASEURL = 'https://www.thewatchcartoononline.tv'
+    BASEURL = 'https://www.wcofun.com'
 else:
     BASEURL = 'https://user.wco.tv'
 #Mod by Christian Haitian ends here
@@ -336,12 +338,12 @@ def actionEpisodesMenu(params):
         listData = getWindowProperty(PROPERTY_EPISODE_LIST_DATA)
     else:
         # New domain safety replace, in case the user is coming in from an old Kodi favorite item.
-        if BASEURL == 'https://www.thewatchcartoononline.tv':
-           url = params['url'].replace('user.wco.tv', 'www.thewatchcartoononline.tv', 1)
+        if BASEURL == 'https://www.wcofun.com':
+           url = params['url'].replace('user.wco.tv', 'www.wcofun.com', 1)
            r = requestHelper(url if url.startswith('http') else BASEURL + url)
            html = r.text
         else:
-           url = params['url'].replace('www.thewatchcartoononline.tv', 'user.wco.tv', 1)
+           url = params['url'].replace('www.wcofun.com', 'user.wco.tv', 1)
            r = requestHelper(url if url.startswith('http') else BASEURL + url)
            html = r.text
 
@@ -1387,7 +1389,7 @@ def actionResolve(params):
 
     else: #Check free site in case of a new release that's not on the premium site yet.
      xbmcgui.Dialog().notification('Trying free stream', '')
-     r = requestHelper(url.replace('user.wco.tv', 'www.thewatchcartoononline.tv', 1)) # Change from premium site to free site
+     r = requestHelper(url.replace('user.wco.tv', 'www.wcofun.com', 1)) # Change from premium site to free site
      content = r.content
 
      def _decodeSource(subContent):
@@ -1542,7 +1544,11 @@ def actionResolve(params):
         # When coming in from a Favourite item, there will be no metadata. Try to get at least a title.
         itemTitle = xbmc.getInfoLabel('ListItem.Title')
         if not itemTitle:
-            match = search(b'<h1[^>]+>([^<]+)</h1', content)
+            if six.PY3:
+                match = search(b'<h1[^>]+>([^<]+)</h1'.decode('utf-8'), content)
+            else:
+                match = search(b'<h1[^>]+>([^<]+)</h1', content)
+
             if match:
                 if six.PY3:
                     itemTitle = str(match.group(1)).replace(' English Subbed', '', 1).replace( 'English Dubbed', '', 1)
@@ -1601,14 +1607,18 @@ def actionResolve(params):
 			# When coming in from a Favourite item, there will be no metadata. Try to get at least a title.
         itemTitle = xbmc.getInfoLabel('ListItem.Title')
         if not itemTitle:
+            if six.PY3:
+                match = search(b'<h1[^>]+>([^<]+)</h1'.decode('utf-8'), content)
+            else:
                 match = search(b'<h1[^>]+>([^<]+)</h1', content)
-                if match:
-                    if six.PY3:
-                        itemTitle = str(match.group(1)).replace(' English Subbed', '', 1).replace( 'English Dubbed', '', 1)
-                    else:
-                        itemTitle = match.group(1).replace(' English Subbed', '', 1).replace( 'English Dubbed', '', 1)
+                
+            if match:
+                if six.PY3:
+                    itemTitle = str(match.group(1)).replace(' English Subbed', '', 1).replace( 'English Dubbed', '', 1)
                 else:
-                    itemTitle = ''
+                    itemTitle = match.group(1).replace(' English Subbed', '', 1).replace( 'English Dubbed', '', 1)
+            else:
+                itemTitle = ''
 
         episodeString = xbmc.getInfoLabel('ListItem.Episode')
         if episodeString != '' and episodeString != '-1':
@@ -1636,7 +1646,7 @@ def actionResolve(params):
         xbmcplugin.setResolvedUrl(PLUGIN_ID, True, item)
     elif '/inc/embed' in content: #Premium link failed so we'll try the free version now.
      xbmcgui.Dialog().notification('Trying free stream', '')
-     r = requestHelper(url.replace('user.wco.tv', 'www.thewatchcartoononline.tv', 1)) # Change from premium site to free site
+     r = requestHelper(url.replace('user.wco.tv', 'www.wcofun.com', 1)) # Change from premium site to free site
      content = r.content
 
      def _decodeSource(subContent):
@@ -1791,7 +1801,11 @@ def actionResolve(params):
         # When coming in from a Favourite item, there will be no metadata. Try to get at least a title.
         itemTitle = xbmc.getInfoLabel('ListItem.Title')
         if not itemTitle:
-            match = search(b'<h1[^>]+>([^<]+)</h1', content)
+            if six.PY3:
+                match = search(b'<h1[^>]+>([^<]+)</h1'.decode('utf-8'), content)
+            else:
+                match = search(b'<h1[^>]+>([^<]+)</h1', content)
+
             if match:
               if six.PY3:
                   itemTitle = str(match.group(1)).replace(' English Subbed', '', 1).replace( 'English Dubbed', '', 1)
@@ -1835,7 +1849,7 @@ def actionResolve(params):
     url = params['url']
     # Sanitize the URL since on some occasions it's a path instead of full address.
     url = url if url.startswith('http') else (BASEURL + (url if url.startswith('/') else '/' + url))
-    r = requestHelper(url.replace('watchcartoononline.io', 'thewatchcartoononline.tv', 1)) # New domain safety.
+    r = requestHelper(url.replace('watchcartoononline.io', 'wcofun.com', 1)) # New domain safety.
     content = r.content
 
     def _decodeSource(subContent):
@@ -1990,6 +2004,7 @@ def actionResolve(params):
         itemTitle = xbmc.getInfoLabel('ListItem.Title')
         if not itemTitle:
             match = search(b'<h1[^>]+>([^<]+)</h1', content)
+
             if match:
                 if six.PY3:
                     itemTitle = str(match.group(1)).replace(' English Subbed', '', 1).replace( 'English Dubbed', '', 1)
@@ -2066,13 +2081,13 @@ def getThumbnailHeaders():
     # Since it's a constant value, it can be precomputed.
     return '|User-Agent=Mozilla%2F5.0+%28compatible%3B+WatchNixtoons2%2F0.4.1%3B' \
     '+%2Bhttps%3A%2F%2Fgithub.com%2Fdoko-desuka%2Fplugin.video.watchnixtoons2%29' \
-    '&Verifypeer=false&Accept=image%2Fwebp%2C%2A%2F%2A&Referer=https%3A%2F%2Fwww.thewatchcartoononline.tv%2F' + cookies
+    '&Verifypeer=false&Accept=image%2Fwebp%2C%2A%2F%2A&Referer=https%3A%2F%2Fwww.wcofun.com%2F' + cookies
 
 
 def getOldDomains():
     # Old possible domains, in the order of likeliness.
     return (
-        'www.wcostream.com', 'm.wcostream.com', 'www.watchcartoononline.io', 'm.watchcartoononline.io'
+        'www.thewatchcartoononline.tv', 'www.wcostream.com', 'm.wcostream.com', 'www.watchcartoononline.io', 'm.watchcartoononline.io'
     )
 
 
@@ -2119,7 +2134,7 @@ def requestHelper(url, data=None, extraHeaders=None):
 
     if data and BASEURL == 'https://user.wco.tv':
         response = session.post(url, data=data, headers=myHeaders, verify=False, timeout=10)
-    elif data and BASEURL == 'https://www.thewatchcartoononline.tv':
+    elif data and BASEURL == 'https://www.wcofun.com':
         response = post(url, data=data, headers=myHeaders, verify=False, cookies=cookieDict, timeout=10)
     else:
          if BASEURL == 'https://user.wco.tv': 
