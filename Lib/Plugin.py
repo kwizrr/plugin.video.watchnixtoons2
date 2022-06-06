@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from re import compile, findall, finditer, search, DOTALL
-import sys
+import sys, ssl
 from requests import Session, get, post, head, exceptions
 import six
 import os #added by Christian Haitian
@@ -39,6 +39,28 @@ import requests
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
+from urllib3.poolmanager import PoolManager
+from requests.adapters import HTTPAdapter
+
+#Thanks to Gujal TLS1.1 and 1.2 code below
+class TLS11HttpAdapter(HTTPAdapter):
+    # "Transport adapter" that allows us to use TLSv1.1
+    def init_poolmanager(self, connections, maxsize, block=False):
+        self.poolmanager = PoolManager(
+            num_pools=connections, maxsize=maxsize,
+            block=block, ssl_version=ssl.PROTOCOL_TLSv1_1)
+
+
+class TLS12HttpAdapter(HTTPAdapter):
+    # "Transport adapter" that allows us to use TLSv1.2
+    def init_poolmanager(self, connections, maxsize, block=False):
+        self.poolmanager = PoolManager(
+            num_pools=connections, maxsize=maxsize,
+            block=block, ssl_version=ssl.PROTOCOL_TLSv1_2)
+
+
+s = requests.session()
+tls_adapters = [TLS12HttpAdapter(), TLS11HttpAdapter()]
 
 PLUGIN_ID = int(sys.argv[1])
 PLUGIN_URL = sys.argv[0]
@@ -1126,6 +1148,11 @@ def makeLatestCatalog(params):
     r = requestHelper(BASEURL_MOBILE) # Path unused, data is already on the homepage.
     html = r.text
 
+    #To be used for testing purposes only
+    #with open('outputerror.txt', 'w') as f:
+        #for p in html:
+            #f.write(str(p))
+
     dataStartIndex = html.find('vList')
     if dataStartIndex == -1:
         raise Exception('(Mobile) Latest catalog scrape fail')
@@ -2130,17 +2157,24 @@ def requestHelper(url, data=None, extraHeaders=None):
 
     startTime = time()
 
-#Mod by Christian Haitian starts here
+    status = 0 #Thanks to Gujal
+    i = -1 #Thanks to Gujal
 
-    if data and BASEURL == 'https://user.wco.tv':
-        response = session.post(url, data=data, headers=myHeaders, verify=False, timeout=10)
-    elif data and BASEURL == 'https://www.wcofun.com':
-        response = post(url, data=data, headers=myHeaders, verify=False, cookies=cookieDict, timeout=10)
-    else:
-         if BASEURL == 'https://user.wco.tv': 
-             response = session.get(url, headers=myHeaders, verify=False, timeout=10)
-         else:
-             response = get(url, headers=myHeaders, verify=False, cookies=cookieDict, timeout=10)
+#Mod by Christian Haitian starts here
+    while status != 200 and i < 2: # Thanks to Gujal
+        if data and BASEURL == 'https://user.wco.tv':
+            response = s.post(url, data=data, headers=myHeaders, verify=False, timeout=10)
+        elif data and BASEURL == 'https://www.wcofun.com':
+            response = s.post(url, data=data, headers=myHeaders, verify=False, cookies=cookieDict, timeout=10)
+        else:
+             if BASEURL == 'https://user.wco.tv': 
+                 response = s.get(url, headers=myHeaders, verify=False, timeout=10)
+             else:
+                 response = s.get(url, headers=myHeaders, verify=False, cookies=cookieDict, timeout=10)
+        status = response.status_code # Thanks to Gujal
+        if status == 403 and 'cloudflare' in response.headers.get('Expect-CT', ''): # Thanks to Gujal
+            i += 1 # Thanks to Gujal
+            s.mount(url, tls_adapters[i]) # Thanks to Gujal
 
 #Mod by Christian Haitian ends here
 
