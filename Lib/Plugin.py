@@ -42,7 +42,7 @@ requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 from urllib3.poolmanager import PoolManager
 from requests.adapters import HTTPAdapter
 
-#Thanks to Gujal TLS1.1 and 1.2 code below
+
 class TLS11HttpAdapter(HTTPAdapter):
     # "Transport adapter" that allows us to use TLSv1.1
     def init_poolmanager(self, connections, maxsize, block=False):
@@ -1148,7 +1148,7 @@ def makeLatestCatalog(params):
     r = requestHelper(BASEURL_MOBILE) # Path unused, data is already on the homepage.
     html = r.text
 
-    #To be used for testing purposes only
+    #The following lines are to be used for testing purposes only
     #with open('outputerror.txt', 'w') as f:
         #for p in html:
             #f.write(str(p))
@@ -2157,24 +2157,24 @@ def requestHelper(url, data=None, extraHeaders=None):
 
     startTime = time()
 
-    status = 0 #Thanks to Gujal
-    i = -1 #Thanks to Gujal
+    status = 0
+    i = -1
 
 #Mod by Christian Haitian starts here
-    while status != 200 and i < 2: # Thanks to Gujal
+    while status != 200 and i < 2:
         if data and BASEURL == 'https://user.wco.tv':
-            response = s.post(url, data=data, headers=myHeaders, verify=False, timeout=10)
+            response = session.post(url, data=data, headers=myHeaders, verify=False, timeout=10)
         elif data and BASEURL == 'https://www.wcofun.com':
             response = s.post(url, data=data, headers=myHeaders, verify=False, cookies=cookieDict, timeout=10)
         else:
              if BASEURL == 'https://user.wco.tv': 
-                 response = s.get(url, headers=myHeaders, verify=False, timeout=10)
+                 response = session.get(url, headers=myHeaders, verify=False, timeout=10)
              else:
                  response = s.get(url, headers=myHeaders, verify=False, cookies=cookieDict, timeout=10)
-        status = response.status_code # Thanks to Gujal
-        if status == 403 and 'cloudflare' in response.headers.get('Expect-CT', ''): # Thanks to Gujal
-            i += 1 # Thanks to Gujal
-            s.mount(url, tls_adapters[i]) # Thanks to Gujal
+        status = response.status_code
+        if status == 403 and 'cloudflare' in response.headers.get('Expect-CT', ''):
+            i += 1
+            s.mount(url, tls_adapters[i])
 
 #Mod by Christian Haitian ends here
 
