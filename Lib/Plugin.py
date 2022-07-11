@@ -83,6 +83,8 @@ PROPERTY_EPISODE_LIST_DATA = 'wnt2.listData'
 PROPERTY_LATEST_MOVIES = 'wnt2.latestMovies'
 PROPERTY_INFO_ITEMS = 'wnt2.infoItems'
 PROPERTY_SESSION_COOKIE = 'wnt2.cookie'
+PROPERTY_URL_CACHE = 'wnt2.URLCache'
+PROPERTY_URL_CACHE_QUOTE = 'wnt2.URLCacheQuote'
 
 #Mod by Christian Haitian starts here
 #Define addon plugin directory
@@ -355,10 +357,17 @@ def actionEpisodesMenu(params):
 
     # Memory-cache the last episode list, to help when the user goes back and forth while watching
     # multiple episodes of the same show. This way only one web request is needed for the same show.
+    URLCache = getWindowProperty(PROPERTY_URL_CACHE)
+    URLCacheQuote = getWindowProperty(PROPERTY_URL_CACHE_QUOTE)
+    if not URLCache: URLCache = {}
+    if not URLCacheQuote: URLCacheQuote = {}
+    
     lastListURL = getRawWindowProperty(PROPERTY_EPISODE_LIST_URL)
     if lastListURL and lastListURL == params['url']:
         listData = getWindowProperty(PROPERTY_EPISODE_LIST_DATA)
     else:
+        URLCache = {}
+        URLCacheQuote = {}
         # New domain safety replace, in case the user is coming in from an old Kodi favorite item.
         if BASEURL == 'https://www.wcofun.com':
            url = params['url'].replace('user.wco.tv', 'www.wcofun.com', 1)
@@ -403,15 +412,20 @@ def actionEpisodesMenu(params):
         itemParams = {'action': 'actionResolve', 'url': None}
         listIter = iter(listData[2]) if ADDON.getSetting('reverseEpisodes') == 'true' else reversed(listData[2])
         for URL, title in listIter:
-            item = listItemFunc(title, URL, artDict, plot, isFolder=False, isSpecial=False, oldParams=None)
+            item = listItemFunc(title, URL, artDict, plot, isFolder=False, isSpecial=False, oldParams=None, URLCacheQuote=URLCacheQuote)
             itemParams['url'] = URL
-            itemURL = buildURL(itemParams)
+            if URL in URLCache:
+                itemURL = URLCache[URL]
+            else:
+                itemURL = buildURL(itemParams)
+                URLCache[URL] = itemURL
             playlist.add(itemURL, item)
             yield (itemURL, item, False)
 
     xbmcplugin.addDirectoryItems(PLUGIN_ID, tuple(_episodeItemsGen()))
     xbmcplugin.endOfDirectory(PLUGIN_ID)
-
+    setWindowProperty(PROPERTY_URL_CACHE, URLCache)
+    setWindowProperty(PROPERTY_URL_CACHE_QUOTE, URLCacheQuote)
 
 def actionLatestMoviesMenu(params):
     # Returns a list of links from a hidden "/anime/movies" area.
@@ -902,6 +916,8 @@ def getPageMetadata(html):
         if thumbPath:
             if thumbPath.startswith('http'):
                 thumb = thumbPath + getThumbnailHeaders()
+            elif thumbPath.startswith('//'):
+                thumb = 'https:' + thumbPath + getThumbnailHeaders()
             elif thumbPath.startswith('/'):
                 thumb = BASEURL + thumbPath + getThumbnailHeaders()
 
@@ -1003,7 +1019,7 @@ def getTitleInfo(unescapedTitle):
             return (unescapedTitle.strip(' -'), None, None, None, '')
 
 
-def makeListItem(title, url, artDict, plot, isFolder, isSpecial, oldParams):
+def makeListItem(title, url, artDict, plot, isFolder, isSpecial, oldParams, URLCacheQuote=None):
     unescapedTitle = unescapeHTMLText(title)
     item = xbmcgui.ListItem(unescapedTitle)
     isPlayable = False
@@ -1043,9 +1059,15 @@ def makeListItem(title, url, artDict, plot, isFolder, isSpecial, oldParams):
         ]
     if isPlayable:
         item.setProperty('IsPlayable', 'true') # Allows the checkmark to be placed on watched episodes.
+        if URLCacheQuote and url in URLCacheQuote:
+            parsedURL = URLCacheQuote[url]
+        else:
+            parsedURL = urllib_parse.quote_plus(url)
+            if parsedURL is None:
+                URLCacheQuote[url] = parsedURL
         playChaptersItem = (
             'Play Chapters',
-            'PlayMedia('+PLUGIN_URL+'?action=actionResolve&url='+urllib_parse.quote_plus(url)+'&playChapters=1)'
+            'PlayMedia('+PLUGIN_URL+'?action=actionResolve&url='+parsedURL+'&playChapters=1)'
         )
         if contextMenuList:
             contextMenuList.append(playChaptersItem)
@@ -1058,7 +1080,7 @@ def makeListItem(title, url, artDict, plot, isFolder, isSpecial, oldParams):
 
 
 # Variant of the 'makeListItem()' function that tries to format the item label using the season and episode.
-def makeListItemClean(title, url, artDict, plot, isFolder, isSpecial, oldParams):
+def makeListItemClean(title, url, artDict, plot, isFolder, isSpecial, oldParams, URLCacheQuote=None):
     unescapedTitle = unescapeHTMLText(title)
     isPlayable = False
 
