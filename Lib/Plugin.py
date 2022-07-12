@@ -137,7 +137,7 @@ ADDON_SHOW_CATALOG = ADDON.getSetting('showCatalog') == 'true'
 # Use Latest Releases date: whether to sort the Latest Releases items by their date, or with a catalog.
 ADDON_LATEST_DATE = ADDON.getSetting('useLatestDate') == 'true'
 # Use Latest Releases thumbs: whether to show a little thumbnail available for the Latest Releases items only.
-ADDON_LATEST_THUMBS = ADDON.getSetting('showLatestThumbs') == 'true'
+ADDON_LATEST_THUMBS = ADDON.getSetting('showLatestThumbs') == 'false'
 # Use poster images for each catalog folder. Makes for a better experience on custom Kodi skins.
 ADDON_CATALOG_THUMBS = ADDON.getSetting('showCatalogThumbs') == 'true'
 ADDON_ICON = ADDON.getAddonInfo('icon')
