@@ -2194,9 +2194,10 @@ def requestHelper(url, data=None, extraHeaders=None):
              else:
                  response = s.get(url, headers=myHeaders, verify=False, cookies=cookieDict, timeout=10)
         status = response.status_code
-        if status == 403 and 'cloudflare' in response.headers.get('Expect-CT', ''):
+        if status != 200:
             i += 1
-            s.mount(url, tls_adapters[i])
+            if status == 403 and '1' == response.headers.get('CF-Chl-Bypass', ''):
+               s.mount(BASEURL, tls_adapters[i])
 
 #Mod by Christian Haitian ends here
 
