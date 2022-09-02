@@ -2197,7 +2197,7 @@ def requestHelper(url, data=None, extraHeaders=None):
         if status != 200:
             i += 1
             if status == 403 and '1' == response.headers.get('CF-Chl-Bypass', ''):
-               s.mount(BASEURL, tls_adapters[i])
+               s.mount(url, tls_adapters[i])
 
 #Mod by Christian Haitian ends here
 
