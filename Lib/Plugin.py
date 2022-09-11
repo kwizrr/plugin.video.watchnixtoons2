@@ -68,7 +68,7 @@ PLUGIN_URL = sys.argv[0]
 #Mod by Christian Haitian starts here
 ADDON = xbmcaddon.Addon()
 if (not (ADDON.getSetting('watchnixtoons2.name') and not ADDON.getSetting('watchnixtoons2.name').isspace())):
-    BASEURL = 'https://www.wcofun.com'
+    BASEURL = 'https://www.wcofun.net'
 else:
     BASEURL = 'https://user.wco.tv'
 #Mod by Christian Haitian ends here
@@ -369,12 +369,12 @@ def actionEpisodesMenu(params):
         URLCache = {}
         URLCacheQuote = {}
         # New domain safety replace, in case the user is coming in from an old Kodi favorite item.
-        if BASEURL == 'https://www.wcofun.com':
-           url = params['url'].replace('user.wco.tv', 'www.wcofun.com', 1)
+        if BASEURL == 'https://www.wcofun.net':
+           url = params['url'].replace('user.wco.tv', 'www.wcofun.net', 1)
            r = requestHelper(url if url.startswith('http') else BASEURL + url)
            html = r.text
         else:
-           url = params['url'].replace('www.wcofun.com', 'user.wco.tv', 1)
+           url = params['url'].replace('www.wcofun.net', 'user.wco.tv', 1)
            r = requestHelper(url if url.startswith('http') else BASEURL + url)
            html = r.text
 
@@ -1438,7 +1438,7 @@ def actionResolve(params):
 
     else: #Check free site in case of a new release that's not on the premium site yet.
      xbmcgui.Dialog().notification('Trying free stream', '')
-     r = requestHelper(url.replace('user.wco.tv', 'www.wcofun.com', 1)) # Change from premium site to free site
+     r = requestHelper(url.replace('user.wco.tv', 'www.wcofun.net', 1)) # Change from premium site to free site
      content = r.content
 
      def _decodeSource(subContent):
@@ -1695,7 +1695,7 @@ def actionResolve(params):
         xbmcplugin.setResolvedUrl(PLUGIN_ID, True, item)
     elif '/inc/embed' in content: #Premium link failed so we'll try the free version now.
      xbmcgui.Dialog().notification('Trying free stream', '')
-     r = requestHelper(url.replace('user.wco.tv', 'www.wcofun.com', 1)) # Change from premium site to free site
+     r = requestHelper(url.replace('user.wco.tv', 'www.wcofun.net', 1)) # Change from premium site to free site
      content = r.content
 
      def _decodeSource(subContent):
@@ -1898,7 +1898,7 @@ def actionResolve(params):
     url = params['url']
     # Sanitize the URL since on some occasions it's a path instead of full address.
     url = url if url.startswith('http') else (BASEURL + (url if url.startswith('/') else '/' + url))
-    r = requestHelper(url.replace('watchcartoononline.io', 'wcofun.com', 1)) # New domain safety.
+    r = requestHelper(url.replace('watchcartoononline.io', 'wcofun.net', 1)) # New domain safety.
     content = r.content
 
     def _decodeSource(subContent):
@@ -2130,7 +2130,7 @@ def getThumbnailHeaders():
     # Since it's a constant value, it can be precomputed.
     return '|User-Agent=Mozilla%2F5.0+%28compatible%3B+WatchNixtoons2%2F0.4.1%3B' \
     '+%2Bhttps%3A%2F%2Fgithub.com%2Fdoko-desuka%2Fplugin.video.watchnixtoons2%29' \
-    '&Verifypeer=false&Accept=image%2Fwebp%2C%2A%2F%2A&Referer=https%3A%2F%2Fwww.wcofun.com%2F' + cookies
+    '&Verifypeer=false&Accept=image%2Fwebp%2C%2A%2F%2A&Referer=https%3A%2F%2Fwww.wcofun.net%2F' + cookies
 
 
 def getOldDomains():
@@ -2186,7 +2186,7 @@ def requestHelper(url, data=None, extraHeaders=None):
     while status != 200 and i < 2:
         if data and BASEURL == 'https://user.wco.tv':
             response = session.post(url, data=data, headers=myHeaders, verify=False, timeout=10)
-        elif data and BASEURL == 'https://www.wcofun.com':
+        elif data and BASEURL == 'https://www.wcofun.net':
             response = s.post(url, data=data, headers=myHeaders, verify=False, cookies=cookieDict, timeout=10)
         else:
              if BASEURL == 'https://user.wco.tv': 
