@@ -146,8 +146,7 @@ ADDON_ICON_DICT = {'icon': ADDON_ICON, 'thumb': ADDON_ICON, 'poster': ADDON_ICON
 ADDON_TRAKT_ICON = 'special://home/addons/plugin.video.watchnixtoons2/resources/traktIcon.png'
 
 # To let the source website know it's this plugin. Also used inside "makeLatestCatalog()" and "actionResolve()".
-WNT2_USER_AGENT = 'Mozilla/5.0 (compatible; WatchNixtoons2/0.4.1; ' \
-'+https://github.com/doko-desuka/plugin.video.watchnixtoons2)'
+WNT2_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36'
 
 MEDIA_HEADERS = None # Initialized in 'actionResolve()'.
 
@@ -920,6 +919,9 @@ def getPageMetadata(html):
                 thumb = 'https:' + thumbPath + getThumbnailHeaders()
             elif thumbPath.startswith('/'):
                 thumb = BASEURL + thumbPath + getThumbnailHeaders()
+
+    # animationexplore seems more reliable
+    thumb = thumb.replace( BASEURL + '/wp-content', 'https://cdn.animationexplore.com' )
 
     # (Show) plot scraping.
     plot = ''
@@ -2128,9 +2130,8 @@ def getThumbnailHeaders():
     cookies = ('&Cookie=' + urllib_parse.quote_plus(cookieProperty)) if cookieProperty else ''
 
     # Since it's a constant value, it can be precomputed.
-    return '|User-Agent=Mozilla%2F5.0+%28compatible%3B+WatchNixtoons2%2F0.4.1%3B' \
-    '+%2Bhttps%3A%2F%2Fgithub.com%2Fdoko-desuka%2Fplugin.video.watchnixtoons2%29' \
-    '&Verifypeer=false&Accept=image%2Fwebp%2C%2A%2F%2A&Referer=https%3A%2F%2Fwww.wcofun.net%2F' + cookies
+    return '|User-Agent='+urllib_parse.quote_plus(WNT2_USER_AGENT)
+    + '&Accept=image%2Fwebp%2C%2A%2F%2A&Referer='+urllib_parse.quote_plus(BASEURL+'/') + cookies
 
 
 def getOldDomains():
