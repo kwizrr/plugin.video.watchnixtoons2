@@ -74,7 +74,8 @@ else:
 #Mod by Christian Haitian ends here
 
 # Due to a recent bug on the server end, the mobile URL is now only used on 'makeLatestCatalog()'.
-BASEURL_MOBILE = 'https://m.wcostream.com' # Mobile version of one of their domains (seems to be the only one).
+# BASEURL_MOBILE = 'https://m.wcostream.com' # Mobile version of one of their domains (seems to be the only one).
+BASEURL_ALT = 'https://www.wcofun.net'
 
 PROPERTY_CATALOG_PATH = 'wnt2.catalogPath'
 PROPERTY_CATALOG = 'wnt2.catalog'
@@ -1169,7 +1170,7 @@ def catalogFromIterable(iterable):
 
 def makeLatestCatalog(params):
     # Returns a list of links from the "Latest 50 Releases" area, but from their mobile site as it has lots of items.
-    r = requestHelper(BASEURL_MOBILE) # Path unused, data is already on the homepage.
+    r = requestHelper(BASEURL_ALT + '/last-50-recent-release') # Path unused, data is already on the homepage.
     html = r.text
 
     #The following lines are to be used for testing purposes only
@@ -1177,9 +1178,9 @@ def makeLatestCatalog(params):
         #for p in html:
             #f.write(str(p))
 
-    dataStartIndex = html.find('vList')
+    dataStartIndex = html.find('fourteen columns')
     if dataStartIndex == -1:
-        raise Exception('(Mobile) Latest catalog scrape fail')
+        raise Exception('Latest catalog scrape fail')
 
     thumbHeaders = getThumbnailHeaders()
 
@@ -1188,17 +1189,17 @@ def makeLatestCatalog(params):
         # This way the actionCatalogMenu() function will show this single section directly, with no alphabet categories.
         return {
             'LATEST': tuple(
-                (match.group(1), match.group(3), BASEURL_MOBILE + match.group(2) + thumbHeaders)
+                (match.group(1), match.group(3), "https:" + match.group(2))
                 for match in finditer(
-                    '''<a href="([^"]+).*?img src="([^"]+).*?div.*?div>(.*?)</div''', html[dataStartIndex : html.find('/ol')]
+                    r'''<div class=\"img\">\s+?<a href=\"([^\"]+)\">\s+?<img class=\"hover-img1\" src=\"([^\"]+)\">\s+?</a>\s+?</div>\s+?<div class=\"recent-release-episodes\"><a href=\".*?\" rel=\"bookmark\">(.*?)</a''', html[dataStartIndex : html.find('</ul>', dataStartIndex)]
                 )
             )
         }
     else:
         return catalogFromIterable(
-            (match.group(1), match.group(3), BASEURL_MOBILE + match.group(2) + thumbHeaders)
+            (match.group(1), match.group(3), "https:" + match.group(2))
             for match in finditer(
-                '''<a href="([^"]+).*?img src="([^"]+).*?div.*?div>(.*?)</div''', html[dataStartIndex : html.find('/ol')]
+                r'''<div class=\"img\">\s+?<a href=\"([^\"]+)\">\s+?<img class=\"hover-img1\" src=\"([^\"]+)\">\s+?</a>\s+?</div>\s+?<div class=\"recent-release-episodes\"><a href=\".*?\" rel=\"bookmark\">(.*?)</a''', html[dataStartIndex : html.find('</ul>', dataStartIndex)]
             )
         )
 
