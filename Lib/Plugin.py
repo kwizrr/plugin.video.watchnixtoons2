@@ -2198,8 +2198,8 @@ def requestHelper(url, data=None, extraHeaders=None):
         status = response.status_code
         if status != 200:
             i += 1
-            if status == 403 and '1' == response.headers.get('CF-Chl-Bypass', ''):
-               s.mount(url, tls_adapters[i])
+            if status == 403 and 'cloudflare' == response.headers.get('server', ''):
+                s.mount(url, tls_adapters[i])
 
 #Mod by Christian Haitian ends here
 
