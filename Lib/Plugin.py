@@ -1456,7 +1456,11 @@ def actionResolve(params):
             for char in chars.replace('"', '').split(',')
         )
         try:
-            return BASEURL + search(r'src="([^"]+)', iframe).group(1)
+            returnUrl = search(r'src="([^"]+)', iframe).group(1)
+            if not returnUrl.startswith('\\') and not returnUrl.startswith('http'):
+                returnUrl = BASEURL + returnUrl
+            return returnUrl
+            #return BASEURL + search(r'src="([^"]+)', iframe).group(1)
         except:
             return None # Probably a temporary block, or change in embedded code.
 
@@ -1504,7 +1508,12 @@ def actionResolve(params):
         return
 
      # Request the embedded player page.
-     r2 = requestHelper(unescapeHTMLText(embedURL)) # Sometimes a '&#038;' symbol is present in this URL.
+     r2 = requestHelper(unescapeHTMLText(embedURL), # Sometimes a '&#038;' symbol is present in this URL.
+            data = None,
+            extraHeaders = {
+                'User-Agent': WNT2_USER_AGENT, 'Accept': '*/*', 'Referer': embedURL, 'X-Requested-With': 'XMLHttpRequest'
+            }
+     )
      html = r2.text
 
      # Find the stream URLs.
@@ -1713,7 +1722,10 @@ def actionResolve(params):
             for char in chars.replace('"', '').split(',')
         )
         try:
-            return BASEURL + search(r'src="([^"]+)', iframe).group(1)
+           returnUrl = search(r'src="([^"]+)', iframe).group(1)
+           if not returnUrl.startswith('\\') and not returnUrl.startswith('http'):
+               returnUrl = BASEURL + returnUrl
+           return returnUrl
         except:
             return None # Probably a temporary block, or change in embedded code.
 
@@ -1761,7 +1773,12 @@ def actionResolve(params):
         return
 
      # Request the embedded player page.
-     r2 = requestHelper(unescapeHTMLText(embedURL)) # Sometimes a '&#038;' symbol is present in this URL.
+     r2 = requestHelper(unescapeHTMLText(embedURL), # Sometimes a '&#038;' symbol is present in this URL.
+            data = None,
+            extraHeaders = {
+                'User-Agent': WNT2_USER_AGENT, 'Accept': '*/*', 'Referer': embedURL, 'X-Requested-With': 'XMLHttpRequest'
+            }
+     )
      html = r2.text
 
      # Find the stream URLs.
@@ -1916,7 +1933,13 @@ def actionResolve(params):
             for char in chars.replace('"', '').split(',')
         )
         try:
-            return BASEURL + search(r'src="([^"]+)', iframe).group(1)
+            if BASEURL == 'https://user.wco.tv':
+                return BASEURL + search(r'src="([^"]+)', iframe).group(1)
+            else:
+                returnUrl = search(r'src="([^"]+)', iframe).group(1)
+                if not returnUrl.startswith('\\') and not returnUrl.startswith('http'):
+                    returnUrl = BASEURL + returnUrl
+                return returnUrl
         except:
             return None # Probably a temporary block, or change in embedded code.
 
@@ -1964,7 +1987,12 @@ def actionResolve(params):
         return
 
     # Request the embedded player page.
-    r2 = requestHelper(unescapeHTMLText(embedURL)) # Sometimes a '&#038;' symbol is present in this URL.
+    r2 = requestHelper(unescapeHTMLText(embedURL), # Sometimes a '&#038;' symbol is present in this URL.
+            data = None,
+            extraHeaders = {
+                'User-Agent': WNT2_USER_AGENT, 'Accept': '*/*', 'Referer': embedURL, 'X-Requested-With': 'XMLHttpRequest'
+            }
+    )
     html = r2.text
 
     # Find the stream URLs.
