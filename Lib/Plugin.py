@@ -28,6 +28,7 @@ import xbmc
 import xbmcgui
 import xbmcaddon
 import xbmcplugin
+import xbmcvfs
 if six.PY3:
   xrange=range
 
@@ -64,6 +65,7 @@ tls_adapters = [TLS12HttpAdapter(), TLS11HttpAdapter()]
 
 PLUGIN_ID = int(sys.argv[1])
 PLUGIN_URL = sys.argv[0]
+PLUGIN_NAME = PLUGIN_URL.replace("plugin://","")
 
 #Mod by Christian Haitian starts here
 ADDON = xbmcaddon.Addon()
@@ -138,12 +140,17 @@ ADDON_SHOW_CATALOG = ADDON.getSetting('showCatalog') == 'true'
 # Use Latest Releases date: whether to sort the Latest Releases items by their date, or with a catalog.
 ADDON_LATEST_DATE = ADDON.getSetting('useLatestDate') == 'true'
 # Use Latest Releases thumbs: whether to show a little thumbnail available for the Latest Releases items only.
-ADDON_LATEST_THUMBS = ADDON.getSetting('showLatestThumbs') == 'false'
+ADDON_LATEST_THUMBS = ADDON.getSetting('showLatestThumbs') == 'true'
 # Use poster images for each catalog folder. Makes for a better experience on custom Kodi skins.
 ADDON_CATALOG_THUMBS = ADDON.getSetting('showCatalogThumbs') == 'true'
+#Use ids from files for the ongoing & popular to show the thumbnails
+ADDON_POPULAR_THUMBS = ADDON.getSetting('showPopularThumbs') == 'true'
+#Use ids from files for the series to show the thumbnails
+ADDON_SERIES_THUMBS = ADDON.getSetting('showSeriesThumbs') == 'true'
 ADDON_ICON = ADDON.getAddonInfo('icon')
 ADDON_FANART = os.path.join(xbmcaddon.Addon().getAddonInfo('path')) + osSeparator + 'fanart.jpg'
 ADDON_ICON_DICT = {'icon': ADDON_ICON, 'thumb': ADDON_ICON, 'poster': ADDON_ICON, 'fanart': ADDON_FANART}
+RESOURCE_URL = 'special://home/addons/{0}resources/'.format(PLUGIN_NAME)
 ADDON_TRAKT_ICON = 'special://home/addons/plugin.video.watchnixtoons2/resources/traktIcon.png'
 
 # To let the source website know it's this plugin. Also used inside "makeLatestCatalog()" and "actionResolve()".
@@ -305,47 +312,73 @@ def actionCatalogSection(params):
         sectionItems = catalog[params['section']]
 
     def _sectionItemsGen():
+        remove_base = False
         if ADDON_LATEST_THUMBS and path == URL_PATHS['latest']:
+            show_thumbs = True
+            form_hash = False
             # Special-case for the 'Latest Releases' catalog, which has some thumbnails available.
             # Each 'entry' is (URL, htmlTitle, thumb).
             NO_THUMB = '-120-72.jpg' # As seen on 2019-04-15.
-            for entry in sectionItems:
-                entryURL = entry[0]
-                entryArt = (
-                    artDict if entry[2].startswith(NO_THUMB) else {'icon':ADDON_ICON,'thumb':entry[2],'poster':entry[2]}
-                )
-                # If there's metadata for this entry (requested by the user with "Show Information"), use it.
-                if entryURL in infoItems:
-                    itemPlot, itemThumb = infoItems[entryURL]
-                    yield (
-                        buildURL({'action': action, 'url': entryURL}),
-                        listItemFunc(entry[1], entryURL, entryArt, itemPlot, isFolder, isSpecial, None),
-                        isFolder
-                    )
+        elif ADDON_POPULAR_THUMBS and path == URL_PATHS['popular']:
+
+            remove_base = True
+            show_thumbs = True
+            form_hash = True
+
+            hashes = {}
+            for path_tmp in [ URL_PATHS['dubbed'], URL_PATHS['cartoons'], URL_PATHS['subbed'] ]:
+                if six.PY2:
+                    f = open( xbmc.translatePath( RESOURCE_URL + 'data/' + path_tmp.replace('/','') + '.json' ) )
                 else:
-                    yield (
-                        buildURL({'action': action, 'url': entryURL}),
-                        listItemFunc(entry[1], entryURL, entryArt, '', isFolder, isSpecial, params),
-                        isFolder
-                    )
+                    f = open( xbmcvfs.translatePath( RESOURCE_URL + 'data/' + path_tmp.replace('/','') + '.json' ) )
+                hashes.update( json.load(f) )
+        elif ADDON_SERIES_THUMBS and path in [ URL_PATHS['dubbed'], URL_PATHS['cartoons'], URL_PATHS['subbed'] ]:
+            show_thumbs = True
+            form_hash = True
+            if six.PY2:
+                f = open( xbmc.translatePath( RESOURCE_URL + 'data/' + path.replace('/','') + '.json' ) )
+            else:
+                f = open( xbmcvfs.translatePath( RESOURCE_URL + 'data/' + path.replace('/','') + '.json' ) )
+            hashes = json.load(f)
         else:
-            # Normal item listing, each 'entry' is (URL, htmlTitle).
-            for entry in sectionItems:
-                entryURL = entry[0]
-                if entryURL in infoItems:
+            show_thumbs = False
+
+        for entry in sectionItems:
+
+            entryURL = entry[0]
+
+            if remove_base:
+                # removes base so can be used in hash table
+                entryURL = entryURL.replace( BASEURL, '' )
+
+            # If there's metadata for this entry (requested by the user with "Show Information"), use it.
+            if entryURL in infoItems:
                     itemPlot, itemThumb = infoItems[entryURL]
-                    entryArt = {'icon': ADDON_ICON, 'thumb': itemThumb, 'poster': itemThumb, 'fanart': itemThumb}
+                    entryArt = {'icon': ADDON_ICON, 'thumb': itemThumb, 'poster': itemThumb}
                     yield (
                         buildURL({'action': action, 'url': entryURL}),
                         listItemFunc(entry[1], entryURL, entryArt, itemPlot, isFolder, isSpecial, None),
                         isFolder
                     )
-                else:
-                    yield (
-                        buildURL({'action': action, 'url': entryURL}),
-                        listItemFunc(entry[1], entryURL, artDict, '', isFolder, isSpecial, params),
-                        isFolder
+            else:
+
+                if show_thumbs and form_hash == False:
+                    entryArt = (
+                        artDict if entry[2].startswith(NO_THUMB) else {'icon':ADDON_ICON,'thumb':entry[2],'poster':entry[2]}
                     )
+                elif show_thumbs and form_hash and generateMd5( entryURL ) in hashes.keys():
+                    thumb_from_hash = 'https://cdn.animationexplore.com/catimg/' + hashes[ generateMd5( entryURL ) ] + '.jpg'
+                    entryArt = (
+                        {'icon':ADDON_ICON,'thumb':thumb_from_hash,'poster':thumb_from_hash}
+                    )
+                else:
+                    entryArt = artDict
+
+                yield (
+                    buildURL({'action': action, 'url': entryURL}),
+                    listItemFunc(entry[1], entryURL, entryArt, '', isFolder, isSpecial, params),
+                    isFolder
+                )
 
     xbmcplugin.addDirectoryItems(PLUGIN_ID, tuple(_sectionItemsGen()))
     xbmcplugin.endOfDirectory(PLUGIN_ID)
@@ -736,7 +769,6 @@ def actionRestoreDatabase(params):
     # This will update all the WatchNixtoons2 'strFilename' columns of table 'files' of Kodi's MyVideos###.db
     # with the new BASEURL used by the add-on so that episodes are still considered as watched (playcount >= 1).
 
-    import xbmcvfs
     try:
         import sqlite3
     except:
@@ -749,7 +781,10 @@ def actionRestoreDatabase(params):
     dirs, files = xbmcvfs.listdir('special://database')
     for file in files:
         if 'MyVideos' in file and file.endswith('.db'):
-            path = xbmc.translatePath('special://database/' + file)
+            if six.PY2:
+                path = xbmc.translatePath('special://database/' + file)
+            else:
+                path = xbmcvfs.translatePath('special://database/' + file)
             break
     else:
         xbmcgui.Dialog().notification(
@@ -772,6 +807,9 @@ def actionRestoreDatabase(params):
             'WatchNixtoons2', 'Unable to connect to MyVideos database', xbmcgui.NOTIFICATION_WARNING, 3000, True
         )
         return
+
+    if six.PY3:
+        from functools import reduce
 
     getCursor = connection.cursor()
     setCursor = connection.cursor()
@@ -818,7 +856,6 @@ def actionUpdateFavourites(params):
     # Action called from the settings dialog.
     # This will update all the Kodi favourites that use WatchNixtoons2 so that they use the new BASEURL.
 
-    import xbmcvfs
     FAVOURITES_PATH = 'special://userdata/favourites.xml'
 
     file = xbmcvfs.File(FAVOURITES_PATH)
@@ -831,6 +868,8 @@ def actionUpdateFavourites(params):
     replaceDomainFunc = lambda original, oldDomain: original.replace(oldDomain, NEW_DOMAIN)
 
     if any(oldDomain in originalText for oldDomain in OLD_DOMAINS):
+        if six.PY3:
+            from functools import reduce
         favoritesText = reduce(replaceDomainFunc, getOldDomains(), favoritesText)
         try:
             file = xbmcvfs.File(FAVOURITES_PATH, 'w')
@@ -895,7 +934,7 @@ def actionShowSettings(params):
     ADDON_LATEST_DATE = newLatestDate
 
     global ADDON_LATEST_THUMBS
-    ADDON_LATEST_THUMBS = ADDON.getSetting('showLatestThumbs') == 'true'
+    #ADDON_LATEST_THUMBS = ADDON.getSetting('showLatestThumbs') == 'true'
 
 
 def getPageMetadata(html):
@@ -921,8 +960,9 @@ def getPageMetadata(html):
             elif thumbPath.startswith('/'):
                 thumb = BASEURL + thumbPath + getThumbnailHeaders()
 
-    # animationexplore seems more reliable
-    thumb = thumb.replace( BASEURL + '/wp-content', 'https://cdn.animationexplore.com' )
+    if thumb:
+        # animationexplore seems more reliable
+        thumb = thumb.replace( BASEURL + '/wp-content', 'https://cdn.animationexplore.com' )
 
     # (Show) plot scraping.
     plot = ''
