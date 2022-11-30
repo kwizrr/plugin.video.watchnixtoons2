@@ -2219,7 +2219,7 @@ def requestHelper(url, data=None, extraHeaders=None):
         elif data and BASEURL == 'https://www.wcofun.net':
             response = s.post(url, data=data, headers=myHeaders, verify=False, cookies=cookieDict, timeout=10)
         else:
-             if BASEURL == 'https://user.wco.tv': 
+             if BASEURL == 'https://user.wco.tv' and 'last-50-recent-release' not in url: 
                  response = session.get(url, headers=myHeaders, verify=False, timeout=10)
              else:
                  response = s.get(url, headers=myHeaders, verify=False, cookies=cookieDict, timeout=10)
