@@ -154,7 +154,7 @@ RESOURCE_URL = 'special://home/addons/{0}resources/'.format(PLUGIN_NAME)
 ADDON_TRAKT_ICON = 'special://home/addons/plugin.video.watchnixtoons2/resources/traktIcon.png'
 
 # To let the source website know it's this plugin. Also used inside "makeLatestCatalog()" and "actionResolve()".
-WNT2_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36'
+WNT2_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'
 
 MEDIA_HEADERS = None # Initialized in 'actionResolve()'.
 
@@ -312,10 +312,14 @@ def actionCatalogSection(params):
         sectionItems = catalog[params['section']]
 
     def _sectionItemsGen():
+
         remove_base = False
+        show_thumbs = False
+        from_hash = False
+
         if ADDON_LATEST_THUMBS and path == URL_PATHS['latest']:
             show_thumbs = True
-            form_hash = False
+
             # Special-case for the 'Latest Releases' catalog, which has some thumbnails available.
             # Each 'entry' is (URL, htmlTitle, thumb).
             NO_THUMB = '-120-72.jpg' # As seen on 2019-04-15.
@@ -323,7 +327,7 @@ def actionCatalogSection(params):
 
             remove_base = True
             show_thumbs = True
-            form_hash = True
+            from_hash = True
 
             hashes = {}
             for path_tmp in [ URL_PATHS['dubbed'], URL_PATHS['cartoons'], URL_PATHS['subbed'] ]:
@@ -334,14 +338,14 @@ def actionCatalogSection(params):
                 hashes.update( json.load(f) )
         elif ADDON_SERIES_THUMBS and path in [ URL_PATHS['dubbed'], URL_PATHS['cartoons'], URL_PATHS['subbed'] ]:
             show_thumbs = True
-            form_hash = True
+            from_hash = True
             if six.PY2:
                 f = open( xbmc.translatePath( RESOURCE_URL + 'data/' + path.replace('/','') + '.json' ) )
             else:
                 f = open( xbmcvfs.translatePath( RESOURCE_URL + 'data/' + path.replace('/','') + '.json' ) )
             hashes = json.load(f)
-        else:
-            show_thumbs = False
+			 
+							   
 
         for entry in sectionItems:
 
@@ -362,11 +366,11 @@ def actionCatalogSection(params):
                     )
             else:
 
-                if show_thumbs and form_hash == False:
+                if show_thumbs and from_hash == False:
                     entryArt = (
                         artDict if entry[2].startswith(NO_THUMB) else {'icon':ADDON_ICON,'thumb':entry[2],'poster':entry[2]}
                     )
-                elif show_thumbs and form_hash and generateMd5( entryURL ) in hashes.keys():
+                elif show_thumbs and from_hash and generateMd5( entryURL ) in hashes.keys():
                     thumb_from_hash = 'https://cdn.animationexplore.com/catimg/' + hashes[ generateMd5( entryURL ) ] + '.jpg'
                     entryArt = (
                         {'icon':ADDON_ICON,'thumb':thumb_from_hash,'poster':thumb_from_hash}
@@ -1002,11 +1006,11 @@ def unescapeHTMLText(text):
     # Unescape HTML entities.
     if r'&#' in text:
         # Strings found by regex-searching on all lists in the source website. It's very likely to only be these.
-        return text.replace(r'&#8216;', '‘').replace(r'&#8221;', '”').replace(r'&#8211;', '-').replace(r'&#038;', '&')\
-        .replace(r'&#8217;', '’').replace(r'&#8220;', '“').replace(r'&#8230;', '…').replace(r'&#160;', ' ')\
-        .replace(r'&amp;', '&')
-    else:
-        return text.replace(r'&amp;', '&')
+        text = text.replace(r'&#8216;', '‘').replace(r'&#8221;', '”').replace(r'&#8211;', '–').replace(r'&#038;', '&')\
+        .replace(r'&#8217;', '’').replace(r'&#8220;', '“').replace(r'&#8230;', '…').replace(r'&#160;', ' ')
+
+    return text.replace(r'&amp;', '&').replace(r'&quot;', '"').replace('\u2606', ' ')
+										  
 
 
 def getTitleInfo(unescapedTitle):
@@ -1064,6 +1068,7 @@ def getTitleInfo(unescapedTitle):
 
 def makeListItem(title, url, artDict, plot, isFolder, isSpecial, oldParams, URLCacheQuote=None):
     unescapedTitle = unescapeHTMLText(title)
+    plot = unescapeHTMLText(plot)
     item = xbmcgui.ListItem(unescapedTitle)
     isPlayable = False
 
@@ -1125,6 +1130,7 @@ def makeListItem(title, url, artDict, plot, isFolder, isSpecial, oldParams, URLC
 # Variant of the 'makeListItem()' function that tries to format the item label using the season and episode.
 def makeListItemClean(title, url, artDict, plot, isFolder, isSpecial, oldParams, URLCacheQuote=None):
     unescapedTitle = unescapeHTMLText(title)
+    plot = unescapeHTMLText(plot)
     isPlayable = False
 
     if isFolder or isSpecial:
@@ -1664,7 +1670,7 @@ def actionResolve(params):
             item.setInfo('video',
                 {
                     'tvshowtitle': xbmc.getInfoLabel('ListItem.TVShowTitle'),
-                    'title': itemTitle,
+                    'title': unescapeHTMLText(itemTitle),
                     'season': int(seasonInfoLabel) if seasonInfoLabel.isdigit() else -1,
                     'episode': int(episodeString),
                     'plot': xbmc.getInfoLabel('ListItem.Plot'),
@@ -1674,7 +1680,7 @@ def actionResolve(params):
         else:
             item.setInfo('video',
                 {
-                    'title': itemTitle,
+                    'title': unescapeHTMLText(itemTitle),
                     'plot': xbmc.getInfoLabel('ListItem.Plot'),
                     'mediatype': 'movie'
                 }
