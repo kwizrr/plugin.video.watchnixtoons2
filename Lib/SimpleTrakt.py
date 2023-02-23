@@ -68,14 +68,50 @@ class SimpleTrakt():
 
 
     def getUserLists(self, addon):
-        r = self._traktRequest('/users/me/lists', data=None, addon=addon)
-        return r.json() if r.ok else ()
+        r1 = self._traktRequest('/users/me/lists', data=None, addon=addon)
+        r2 = self._traktRequest('/users/likes/lists', data=None, addon=addon)
+
+        def _traktDataGen(*iterables):
+            for suffix, lists in iterables:
+                for list in lists:
+                    yield (
+                        list['name'] + suffix,
+                        '/users/%s/lists/%i' % (list['user']['ids']['slug'], list['ids']['trakt']),
+                        list['description']
+                    )
+
+        return _traktDataGen(
+            ('', (r1.json() if r1.ok else ())),
+            (' (Liked)', ((item['list'] for item in r2.json()) if r2.ok else ()))
+        )
 
 
-    def getListItems(self, listID, addon):
-        r = self._traktRequest('/users/me/lists/' + listID + '/items/movie,show', data=None, addon=addon)
+    def getListItems(self, listURL, addon):
+        # This query ignores 'person' type objects, like actors.
+        r = self._traktRequest(listURL + '/items/movie,show,season,episode?extended=full', data=None, addon=addon)
+        
+        def _preprocessItemsGen(iterable):
+            searchTypes = {'movie': 'movies', 'show': 'series', 'season': 'series', 'episode': 'series'}
+            for item in iterable:
+                itemType = item['type']
+                itemProps = item[itemType]
+                
+                if itemType == 'season':
+                    # Since we can't point to a specific season, point to the show instead.
+                    label = itemProps['title'] + ' (' + item['show']['title'] + ')'
+                    query = item['show']['title']
+                    overview = itemProps['overview'] if itemProps['overview'] else item['show']['overview']
+                elif itemType == 'episode':
+                    label = itemProps['title'] + ' (Season %i) (%s)' % (itemProps['season'], item['show']['title'])
+                    query = item['show']['title']
+                    overview = itemProps['overview']
+                else:
+                    query = label = itemProps['title']
+                    overview = itemProps['overview']
+                yield label, overview, searchTypes[itemType], query
+        
         if r.ok:
-            return set(item[item['type']]['title'] for item in r.json())
+            return _preprocessItemsGen(r.json())
         else:
             return ()
 
@@ -91,9 +127,7 @@ class SimpleTrakt():
             progressDialog = xbmcgui.DialogProgress()
             progressDialog.create(
                 'Trakt Activation',
-                'Go to [B]' + jsonData['verification_url'] + '[/B] and enter this code:',
-                '[COLOR aquamarine][B]' + jsonData['user_code'] + '[/B][/COLOR]',
-                'Time left:'
+                'Go to [B]' + jsonData['verification_url'] + '[/B] and enter this code:[COLOR aquamarine][B]' + jsonData['user_code'] + '[/B][/COLOR] Time left:'
             )
 
             pollData = {
@@ -102,11 +136,11 @@ class SimpleTrakt():
                 'client_secret': self.CLIENT_SECRET
             }
 
-            for s in xrange(totalTime):
+            for s in range(totalTime):
                 if progressDialog.iscanceled():
                     break
                 percentage = int(s / float(totalTime) * 100.0)
-                progressDialog.update(percentage, line3='Time left: [B]' + str(totalTime - s) + '[/B] seconds')
+                progressDialog.update(percentage, 'Go to [B]' + jsonData['verification_url'] + '[/B] and enter this code:[COLOR aquamarine][B]' + jsonData['user_code'] + '[/B][/COLOR] Time left: [B]' + str(totalTime - s) + '[/B] seconds')
 
                 if not (s % interval):
                     r2 = self._traktRequest('/oauth/device/token', pollData)
@@ -121,7 +155,7 @@ class SimpleTrakt():
             else:
                 progressDialog.close()
             return None
-            
+
         else:
             self._notification('Watchnixtoons2', 'Trakt request failed', useSound=True, isError=True)
             return None
